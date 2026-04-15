@@ -1,0 +1,45 @@
+{
+  "version": "v1",
+  "scenarios": [
+    {
+      "id": "power-grasp-small",
+      "category": "grasp",
+      "action": "power_grasp",
+      "variation": "small_object",
+      "prompt_text": "Power grasp a small imaginary object and release.",
+      "difficulty": "easy",
+      "allowed_hands": "either",
+      "tags": ["grasp", "release"]
+    },
+    {
+      "id": "pinch-precision",
+      "category": "pinch",
+      "action": "precision_pinch",
+      "variation": "index_thumb",
+      "prompt_text": "Perform a precise thumb-index pinch and hold briefly.",
+      "difficulty": "easy",
+      "allowed_hands": "either",
+      "tags": ["pinch", "precision"]
+    },
+    {
+      "id": "finger-wave-left",
+      "category": "gesture",
+      "action": "finger_wave",
+      "variation": "left_only",
+      "prompt_text": "Wave the fingers one by one with the left hand.",
+      "difficulty": "medium",
+      "allowed_hands": "left",
+      "tags": ["gesture"]
+    },
+    {
+      "id": "bimanual-transfer",
+      "category": "coordination",
+      "action": "object_transfer",
+      "variation": "handoff",
+      "prompt_text": "Mimic passing an object from one hand to the other.",
+      "difficulty": "medium",
+      "allowed_hands": "both",
+      "tags": ["bimanual", "handoff"]
+    }
+  ]
+}

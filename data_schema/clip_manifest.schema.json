@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "clip_id",
+    "session_id",
+    "label",
+    "prompt_text",
+    "active_hands",
+    "recorded_topics",
+    "start_time",
+    "end_time",
+    "duration_sec",
+    "frame_counts",
+    "bag_path",
+    "status"
+  ],
+  "properties": {
+    "clip_id": { "type": "string" },
+    "session_id": { "type": "string" },
+    "label": {
+      "type": "object",
+      "required": ["category", "action", "variation"],
+      "properties": {
+        "category": { "type": "string" },
+        "action": { "type": "string" },
+        "variation": { "type": "string" }
+      }
+    },
+    "prompt_text": { "type": "string" },
+    "active_hands": { "enum": ["left", "right", "both"] },
+    "recorded_topics": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "start_time": { "type": "string" },
+    "end_time": { "type": "string" },
+    "duration_sec": { "type": "number" },
+    "frame_counts": { "type": "object" },
+    "bag_path": { "type": "string" },
+    "status": {
+      "enum": [
+        "accepted",
+        "discarded",
+        "retried",
+        "invalid",
+        "failed",
+        "interrupted",
+        "review"
+      ]
+    },
+    "failure_reason": { "type": ["string", "null"] },
+    "operator_note": { "type": "string" }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "session_id",
+    "operator_id",
+    "active_hands",
+    "started_at",
+    "scenario_library_version",
+    "notes",
+    "collection_setup"
+  ],
+  "properties": {
+    "session_id": { "type": "string" },
+    "operator_id": { "type": "string" },
+    "active_hands": { "enum": ["left", "right", "both"] },
+    "started_at": { "type": "string" },
+    "ended_at": { "type": ["string", "null"] },
+    "scenario_library_version": { "type": "string" },
+    "notes": { "type": "string" },
+    "collection_setup": { "type": "object" }
+  }
+}

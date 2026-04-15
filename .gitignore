@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+dist/
+build/
+install/
+log/
+node_modules/
+web/node_modules/
+web/dist/
+dataset/
