@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from geometry_msgs.msg import PoseArray
 from std_msgs.msg import String
 
-from .models import ClipDecision, ClipLabel, ClipRecord, EventRecord, HandMode, RecorderState, Scenario, SessionRecord, SessionSnapshot
+from .models import ClipDecision, ClipLabel, ClipRecord, EventRecord, HandMode, HandPosePoint, RecorderState, Scenario, SessionRecord, SessionSnapshot
 from .scenario_library import ScenarioLibrary
 from .storage import DatasetStorage
 from .writer import BufferedMessage, RosbagClipWriter
@@ -51,6 +52,10 @@ class CollectionService:
         self.recent_pairs: deque[tuple[str, str]] = deque(maxlen=8)
         self.history: list[dict[str, Any]] = []
         self.topic_health: dict[str, Any] = {}
+        self.hand_pose_preview: dict[str, list[HandPosePoint]] = {
+            "left": [],
+            "right": [],
+        }
         self.session_notes: list[str] = []
 
     def create_session(
@@ -76,6 +81,7 @@ class CollectionService:
         self.current_clip = None
         self.buffered_messages = []
         self.pending_clip_events = []
+        self.hand_pose_preview = {"left": [], "right": []}
         self.session_notes = []
         self.storage.write_session_manifest(self.session)
         return self.session
@@ -117,14 +123,17 @@ class CollectionService:
         return self.current_clip
 
     def record_message(self, topic: str, message: Any, timestamp_ns: int) -> None:
+        preview_key = self._hand_key_for_topic(topic)
+        if preview_key and isinstance(message, PoseArray):
+            self.hand_pose_preview[preview_key] = self._pose_array_preview(message)
+
         if self.current_state is not RecorderState.RECORDING or self.current_clip is None:
             return
-        if topic not in self._required_topics():
-            return
-        self.buffered_messages.append(
-            BufferedMessage(topic=topic, message=message, timestamp_ns=timestamp_ns)
-        )
-        self.current_clip.frame_counts[topic] = self.current_clip.frame_counts.get(topic, 0) + 1
+        if topic in self._required_topics():
+            self.buffered_messages.append(
+                BufferedMessage(topic=topic, message=message, timestamp_ns=timestamp_ns)
+            )
+            self.current_clip.frame_counts[topic] = self.current_clip.frame_counts.get(topic, 0) + 1
         self.topic_health[topic] = {"last_timestamp_ns": timestamp_ns}
 
     def stop_clip(self, stop_time: datetime | None = None) -> ClipRecord:
@@ -205,6 +214,7 @@ class CollectionService:
             current_state=self.current_state,
             current_prompt=self.current_prompt,
             current_clip_id=clip_id,
+            hand_pose_preview=self.hand_pose_preview,
             topic_health=self.topic_health,
             recent_history=self.history[-10:],
         )
@@ -228,6 +238,26 @@ class CollectionService:
         if session.active_hands == HandMode.RIGHT:
             return [RIGHT_TOPIC]
         return [LEFT_TOPIC, RIGHT_TOPIC]
+
+    @staticmethod
+    def _hand_key_for_topic(topic: str) -> str | None:
+        if topic == LEFT_TOPIC:
+            return "left"
+        if topic == RIGHT_TOPIC:
+            return "right"
+        return None
+
+    @staticmethod
+    def _pose_array_preview(message: PoseArray) -> list[HandPosePoint]:
+        return [
+            HandPosePoint(
+                x=pose.position.x,
+                y=pose.position.y,
+                z=pose.position.z,
+                frame_id=message.header.frame_id,
+            )
+            for pose in message.poses
+        ]
 
     def _sanity_check(self, clip: ClipRecord) -> str | None:
         if clip.duration_sec < self.min_duration_sec:

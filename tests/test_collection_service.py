@@ -149,3 +149,22 @@ def test_add_note_is_written_to_event_log(service):
         for line in clip.clip_dir.joinpath("events.jsonl").read_text().splitlines()
     ]
     assert any(event["event_type"] == "note_added" for event in events)
+
+
+def test_snapshot_includes_live_hand_pose_preview_outside_recording(service):
+    service.create_session(operator_id="operator", active_hands=HandMode.BOTH)
+    service.record_message(
+        topic="/teleop/human/hand_left/pose",
+        message=make_pose_array("left_preview"),
+        timestamp_ns=1_000_000,
+    )
+    service.record_message(
+        topic="/teleop/human/hand_right/pose",
+        message=make_pose_array("right_preview"),
+        timestamp_ns=2_000_000,
+    )
+
+    snapshot = service.snapshot()
+
+    assert snapshot.hand_pose_preview["left"][0]["x"] == 1.0
+    assert snapshot.hand_pose_preview["right"][0]["frame_id"] == "right_preview"

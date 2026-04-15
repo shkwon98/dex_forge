@@ -13,6 +13,38 @@ async function request(path, options = {}) {
 }
 
 
+export function createStatusSource() {
+  return {
+    subscribe(callback) {
+      if (typeof window === "undefined" || typeof window.WebSocket === "undefined") {
+        callback({
+          current_state: "idle",
+          active_hands: "left",
+          hand_pose_preview: { left: [], right: [] },
+        });
+        return () => {};
+      }
+
+      const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+      const socket = new window.WebSocket(`${protocol}://${window.location.host}/ws/status`);
+
+      socket.addEventListener("message", (event) => {
+        callback(JSON.parse(event.data));
+      });
+
+      socket.addEventListener("error", () => {
+        callback({
+          current_state: "idle",
+          hand_pose_preview: { left: [], right: [] },
+        });
+      });
+
+      return () => socket.close();
+    },
+  };
+}
+
+
 export const apiClient = {
   createSession: async ({ operatorId, activeHands, notes }) =>
     request("/api/sessions", {

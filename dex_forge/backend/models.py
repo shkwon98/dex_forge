@@ -71,6 +71,16 @@ class EventRecord(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class HandPosePoint(BaseModel):
+    x: float
+    y: float
+    z: float
+    frame_id: str = ""
+
+    def __getitem__(self, key: str) -> float | str:
+        return getattr(self, key)
+
+
 class ClipRecord(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, use_enum_values=False)
 
@@ -115,5 +125,6 @@ class SessionSnapshot(BaseModel):
     current_state: RecorderState
     current_prompt: Scenario | None
     current_clip_id: str | None
+    hand_pose_preview: dict[str, list[HandPosePoint]] = Field(default_factory=dict)
     topic_health: dict[str, Any] = Field(default_factory=dict)
     recent_history: list[dict[str, Any]] = Field(default_factory=list)
