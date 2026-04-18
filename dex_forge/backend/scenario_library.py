@@ -25,6 +25,7 @@ class ScenarioLibrary:
     def next_scenario(
         self,
         active_hands: HandMode,
+        current_scenario_id: str | None = None,
         recent_pairs: list[tuple[str, str]] | None = None,
     ) -> Scenario:
         eligible = [scenario for scenario in self._scenarios if self._matches(active_hands, scenario.allowed_hands)]
@@ -32,11 +33,15 @@ class ScenarioLibrary:
             raise LookupError(f"no scenarios available for hand mode {active_hands.value}")
 
         recent_pairs = recent_pairs or []
-        for scenario in eligible:
-            pair = (scenario.category, scenario.action)
-            if pair not in recent_pairs:
-                return scenario
-        return eligible[0]
+        ordered = sorted(
+            eligible,
+            key=lambda scenario: (scenario.category, scenario.action) in recent_pairs,
+        )
+        if current_scenario_id and len(ordered) > 1:
+            for index, scenario in enumerate(ordered):
+                if scenario.id == current_scenario_id:
+                    return ordered[(index + 1) % len(ordered)]
+        return ordered[0]
 
     @staticmethod
     def _matches(active_hands: HandMode, allowed_hands: str) -> bool:

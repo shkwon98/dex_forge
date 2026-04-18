@@ -59,6 +59,55 @@ def test_start_requires_armed_clip(service):
         service.start_clip()
 
 
+def test_start_uses_current_prompt_without_explicit_arm(service):
+    service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+    prompt = service.next_prompt()
+
+    clip = service.start_clip(start_time=datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC))
+
+    assert clip.prompt_text == prompt.prompt_text
+    assert clip.label.action == prompt.action
+    assert service.current_state == RecorderState.RECORDING
+
+
+def test_next_prompt_rotates_to_a_different_scenario_before_repeating(tmp_path):
+    scenarios = [
+        Scenario(
+            id="prompt-a",
+            category="grasp",
+            action="power",
+            variation="a",
+            prompt_text="Prompt A",
+            difficulty="easy",
+            allowed_hands="either",
+            tags=[],
+        ),
+        Scenario(
+            id="prompt-b",
+            category="pinch",
+            action="precision",
+            variation="b",
+            prompt_text="Prompt B",
+            difficulty="easy",
+            allowed_hands="either",
+            tags=[],
+        ),
+    ]
+    service = CollectionService(
+        dataset_root=tmp_path / "dataset",
+        scenarios=scenarios,
+        scenario_version="test-v1",
+        min_duration_sec=0.05,
+        min_frames_per_topic=1,
+    )
+    service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+
+    first = service.next_prompt()
+    second = service.next_prompt()
+
+    assert second.id != first.id
+
+
 def test_stop_writes_clip_outputs_and_mcap_for_left_hand(service):
     service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
     prompt = service.next_prompt()

@@ -9,13 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.websockets import WebSocketDisconnect
 
 from .models import ClipDecision, HandMode
 from .service import CollectionService
 
 
 class CreateSessionRequest(BaseModel):
-    operator_id: str
+    operator_id: str = ""
     active_hands: HandMode
     notes: str = ""
     collection_setup: dict = {}
@@ -119,8 +120,10 @@ def create_app(service: CollectionService, web_dist: Path | None = None) -> Fast
             while True:
                 await websocket.send_json(service.snapshot().model_dump(mode="json"))
                 await asyncio.sleep(0.5)
+        except WebSocketDisconnect:
+            return
         except Exception:
-            await websocket.close()
+            return
 
     @app.get("/{path:path}")
     def serve_frontend(path: str):

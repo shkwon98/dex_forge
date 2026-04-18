@@ -16,26 +16,12 @@ const BONE_CHAINS = [
 
 function handModeLabel(activeHands) {
   if (activeHands === "left") {
-    return "Left hand session";
+    return "Left hand";
   }
   if (activeHands === "right") {
-    return "Right hand session";
+    return "Right hand";
   }
-  return "Both hand session";
-}
-
-
-function statusLabel(state, fallback) {
-  if (state === "recording") {
-    return "Recording in progress";
-  }
-  if (state === "review") {
-    return "Review clip";
-  }
-  if (state === "armed") {
-    return "Clip armed";
-  }
-  return fallback;
+  return "Both hands";
 }
 
 
@@ -55,8 +41,8 @@ function normalizePoints(points) {
 
   return points.map((point) => ({
     ...point,
-    nx: 42 + ((point.x - minX) / width) * 236,
-    ny: 246 - ((point.y - minY) / height) * 184,
+    nx: 44 + ((point.x - minX) / width) * 232,
+    ny: 236 - ((point.y - minY) / height) * 180,
   }));
 }
 
@@ -65,13 +51,15 @@ function SkeletonViewer({ points, focusedHand }) {
   const normalized = normalizePoints(points);
 
   return (
-    <div className="viewer-card">
-      <div className="viewer-meta">
+    <section className="viewer-card">
+      <div className="viewer-header">
         <div>
-          <p className="kicker">Live hand stage</p>
-          <h3>{focusedHand === "left" ? "Left hand" : "Right hand"} skeleton</h3>
+          <p className="section-label">Live Hand</p>
+          <h2>{focusedHand === "left" ? "Left hand" : "Right hand"}</h2>
         </div>
-        <div className="viewer-pill">{normalized.length ? "Stream alive" : "Awaiting pose"}</div>
+        <div className={normalized.length ? "viewer-status live" : "viewer-status"}>
+          {normalized.length ? "Live" : "Waiting"}
+        </div>
       </div>
       <svg
         aria-label="Hand skeleton viewer"
@@ -79,14 +67,7 @@ function SkeletonViewer({ points, focusedHand }) {
         viewBox="0 0 320 280"
         role="img"
       >
-        <defs>
-          <radialGradient id="viewerGlow" cx="50%" cy="30%" r="70%">
-            <stop offset="0%" stopColor="rgba(197,94,32,0.24)" />
-            <stop offset="100%" stopColor="rgba(197,94,32,0)" />
-          </radialGradient>
-        </defs>
-        <rect x="18" y="18" width="284" height="244" rx="30" className="viewer-plate" />
-        <rect x="30" y="30" width="260" height="220" rx="22" fill="url(#viewerGlow)" />
+        <rect x="18" y="18" width="284" height="244" rx="28" className="viewer-plate" />
         {normalized.length ? (
           <>
             {BONE_CHAINS.map((chain, index) =>
@@ -119,16 +100,35 @@ function SkeletonViewer({ points, focusedHand }) {
             ))}
           </>
         ) : (
-          <text x="160" y="148" textAnchor="middle" className="viewer-empty">
+          <text x="160" y="146" textAnchor="middle" className="viewer-empty">
             Waiting for pose stream
           </text>
         )}
       </svg>
       <div className="viewer-footer">
-        <span>{normalized[0]?.frame_id || "No frame id yet"}</span>
+        <span>{normalized[0]?.frame_id || "No frame id"}</span>
         <span>{normalized.length} joints</span>
       </div>
-    </div>
+    </section>
+  );
+}
+
+
+function LaunchViewerPanel({ activeHands, previews }) {
+  if (activeHands === "both") {
+    return (
+      <div className="launch-viewers">
+        <SkeletonViewer points={previews.left} focusedHand="left" />
+        <SkeletonViewer points={previews.right} focusedHand="right" />
+      </div>
+    );
+  }
+
+  return (
+    <SkeletonViewer
+      points={activeHands === "right" ? previews.right : previews.left}
+      focusedHand={activeHands === "right" ? "right" : "left"}
+    />
   );
 }
 
@@ -140,7 +140,7 @@ function FocusedHandToggle({ activeHands, focusedHand, onChange }) {
 
   return (
     <div className="focus-toggle">
-      <span className="focus-label">Focused hand</span>
+      <span className="section-label">Focused hand</span>
       <div className="focus-actions">
         <button
           type="button"
@@ -164,18 +164,17 @@ function FocusedHandToggle({ activeHands, focusedHand, onChange }) {
 }
 
 
-export function App({ api = apiClient, statusSource = createStatusSource() }) {
-  const [operatorId, setOperatorId] = useState("");
+export function App({ api = apiClient, statusSource: providedStatusSource }) {
+  const [statusSource] = useState(() => providedStatusSource ?? createStatusSource());
   const [activeHands, setActiveHands] = useState("left");
   const [sessionNotes, setSessionNotes] = useState("");
   const [session, setSession] = useState(null);
   const [prompt, setPrompt] = useState(null);
-  const [armedClip, setArmedClip] = useState(null);
   const [recording, setRecording] = useState(false);
   const [reviewClip, setReviewClip] = useState(null);
   const [clipNote, setClipNote] = useState("");
-  const [statusMessage, setStatusMessage] = useState("Awaiting session");
   const [lastOutcome, setLastOutcome] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
   const [liveSnapshot, setLiveSnapshot] = useState({
     current_state: "idle",
     hand_pose_preview: { left: [], right: [] },
@@ -191,127 +190,131 @@ export function App({ api = apiClient, statusSource = createStatusSource() }) {
   }, [statusSource]);
 
   useEffect(() => {
-    const currentMode = session?.active_hands ?? liveSnapshot.active_hands;
+    const currentMode = session?.active_hands ?? activeHands;
     if (currentMode === "right") {
       setFocusedHand("right");
     } else if (currentMode === "left") {
       setFocusedHand("left");
-    } else if (!["left", "right"].includes(focusedHand)) {
-      setFocusedHand("left");
     }
-  }, [session?.active_hands, liveSnapshot.active_hands, focusedHand]);
+  }, [activeHands, session?.active_hands]);
 
   async function handleStartSession(event) {
     event.preventDefault();
-    const created = await api.createSession({
-      operatorId,
-      activeHands,
-      notes: sessionNotes,
-    });
-    setSession(created);
-    setStatusMessage("Awaiting prompt");
-    setLastOutcome("");
-    setPrompt(null);
-    setArmedClip(null);
-    setReviewClip(null);
-    setRecording(false);
-  }
-
-  async function handleNextPrompt() {
-    const nextPrompt = await api.getNextPrompt();
-    setPrompt(nextPrompt);
-    setArmedClip(null);
-    setReviewClip(null);
-    setStatusMessage("Prompt ready");
-  }
-
-  async function handleArmClip() {
-    if (!prompt) {
-      return;
+    setErrorMessage("");
+    try {
+      const created = await api.createSession({
+        activeHands,
+        notes: sessionNotes,
+      });
+      const firstPrompt = await api.getNextPrompt();
+      setSession(created);
+      setPrompt(firstPrompt);
+      setLastOutcome("");
+      setReviewClip(null);
+      setRecording(false);
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to start session.");
     }
-    const armed = await api.armClip(prompt.id);
-    setArmedClip(armed);
-    setStatusMessage("Clip armed");
+  }
+
+  async function handleRefreshPrompt() {
+    setErrorMessage("");
+    try {
+      const nextPrompt = await api.getNextPrompt();
+      setPrompt(nextPrompt);
+      setReviewClip(null);
+      setRecording(false);
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to load a prompt.");
+    }
   }
 
   async function handleStartRecording() {
-    await api.startClip();
-    setRecording(true);
-    setReviewClip(null);
-    setStatusMessage("Recording in progress");
+    if (!prompt) {
+      return;
+    }
+    setErrorMessage("");
+    try {
+      await api.startClip();
+      setRecording(true);
+      setReviewClip(null);
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to start recording.");
+    }
   }
 
   async function handleStopRecording() {
-    const stopped = await api.stopClip();
-    setRecording(false);
-    setReviewClip(stopped);
-    setStatusMessage(stopped.failure_reason ? "Clip invalid" : "Review clip");
+    setErrorMessage("");
+    try {
+      const stopped = await api.stopClip();
+      setRecording(false);
+      setReviewClip(stopped);
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to stop recording.");
+    }
   }
 
   async function handleSaveNote() {
     if (!clipNote) {
       return;
     }
-    await api.addNote(clipNote);
-    setStatusMessage("Clip note saved");
-    setClipNote("");
+    setErrorMessage("");
+    try {
+      await api.addNote(clipNote);
+      setClipNote("");
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to save note.");
+    }
   }
 
   async function handleDecision(decision) {
     if (!reviewClip) {
       return;
     }
-    const result = await api.decideClip(reviewClip.clip_id, decision);
-    setReviewClip(null);
-    setArmedClip(null);
-    setRecording(false);
-    if (result.status === "accepted") {
-      setLastOutcome("Last clip accepted");
-      setStatusMessage("Ready for the next prompt");
-    } else if (result.status === "discarded") {
-      setLastOutcome("Last clip discarded");
-      setStatusMessage("Ready for the next prompt");
-    } else {
-      setLastOutcome("Retry armed");
-      setStatusMessage("Clip armed");
-      setArmedClip(result);
+    setErrorMessage("");
+    try {
+      const result = await api.decideClip(reviewClip.clip_id, decision);
+      setReviewClip(null);
+      setRecording(false);
+      if (result.status === "accepted") {
+        setLastOutcome("Last clip accepted");
+      } else if (result.status === "discarded") {
+        setLastOutcome("Last clip discarded");
+      } else {
+        setLastOutcome("Retry ready");
+      }
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to update clip decision.");
     }
   }
 
-  const currentMode = session?.active_hands ?? liveSnapshot.active_hands ?? activeHands;
+  const currentMode = session?.active_hands ?? activeHands;
   const visiblePoints = liveSnapshot.hand_pose_preview?.[focusedHand] ?? [];
   const promptHeadline = reviewClip
-    ? "Review the last capture before committing it."
-    : prompt?.prompt_text || "Request the next motion and keep the operator focused on one action at a time.";
+    ? "Review the recorded clip."
+    : prompt?.prompt_text || "Loading prompt...";
 
   return (
     <div className="page-shell">
-      <main className="stage-frame">
-        <section className="masthead">
+      <main className="app-shell">
+        <header className="app-header">
           <div>
-            <p className="eyebrow">DexForge</p>
-            <h1>Editorial-grade capture stage for dexterous hand data.</h1>
+            <p className="app-title">DexForge</p>
+            <p className="app-caption">Hand motion data collection</p>
           </div>
-          <p className="subhead">
-            One prompt, one decision, one live skeleton console. The interface stays calm while the demo floor stays busy.
-          </p>
-        </section>
+          <div className="header-chip">{handModeLabel(currentMode)}</div>
+        </header>
+
+        {errorMessage ? <div className="error-banner">{errorMessage}</div> : null}
 
         {!session ? (
           <section className="launch-shell">
             <form className="launch-panel" onSubmit={handleStartSession}>
-              <p className="kicker">Session launch</p>
-              <h2>Begin a focused capture run.</h2>
-              <label>
-                Operator
-                <input
-                  aria-label="Operator"
-                  value={operatorId}
-                  onChange={(event) => setOperatorId(event.target.value)}
-                  placeholder="collector-01"
-                  required
-                />
-              </label>
+              <div className="panel-heading">
+                <p className="section-label">Start Session</p>
+                <h1>Choose the hand mode and start recording.</h1>
+              </div>
+
               <label>
                 Active hands
                 <select
@@ -324,6 +327,7 @@ export function App({ api = apiClient, statusSource = createStatusSource() }) {
                   <option value="both">Both</option>
                 </select>
               </label>
+
               <label>
                 Session notes
                 <textarea
@@ -331,66 +335,46 @@ export function App({ api = apiClient, statusSource = createStatusSource() }) {
                   value={sessionNotes}
                   onChange={(event) => setSessionNotes(event.target.value)}
                   rows={4}
-                  placeholder="Optional operator notes, props, or scene context"
+                  placeholder="Optional notes about props, setup, or special conditions"
                 />
               </label>
+
               <button type="submit" className="primary-action">
                 Start session
               </button>
             </form>
 
-            <SkeletonViewer points={visiblePoints} focusedHand={focusedHand} />
+            <LaunchViewerPanel activeHands={activeHands} previews={liveSnapshot.hand_pose_preview} />
           </section>
         ) : (
           <section className="capture-shell">
-            <div className="capture-stage">
-              <header className="status-ribbon">
+            <section className="capture-stage">
+              <div className="status-row">
                 <div>
-                  <p className="kicker">Session active</p>
+                  <p className="section-label">Session</p>
                   <strong>{handModeLabel(session.active_hands)}</strong>
                 </div>
-                <p className="status-copy">
-                  {statusLabel(liveSnapshot.current_state, statusMessage)}
-                </p>
-              </header>
+                {lastOutcome ? <div className="header-chip">{lastOutcome}</div> : null}
+              </div>
 
               <div className="prompt-stage">
-                <div className="prompt-meta">
-                  <div>
-                    <p className="kicker">Current action</p>
-                    <p className="prompt-tagline">
-                      {prompt ? `${prompt.category} / ${prompt.action} / ${prompt.variation}` : "Stage is idle"}
-                    </p>
-                  </div>
-                  {lastOutcome ? <span className="outcome-pill">{lastOutcome}</span> : null}
-                </div>
-
-                <h2 className="prompt-headline">{promptHeadline}</h2>
-
+                <p className="section-label">Prompt</p>
+                <h1 className="prompt-headline">{promptHeadline}</h1>
+                <p className="prompt-meta">
+                  {prompt ? `${prompt.category} / ${prompt.action} / ${prompt.variation}` : "No prompt"}
+                </p>
                 <p className="prompt-support">
                   {reviewClip
                     ? reviewClip.failure_reason
                       ? `Failure reason: ${reviewClip.failure_reason}`
-                      : "Clip ready for operator review."
+                      : "Choose accept, discard, or retry."
                     : recording
-                      ? "Recording is live. Keep the gesture clean and stop when the motion is complete."
-                      : armedClip
-                        ? "The clip is armed. Start recording when the demonstrator is ready."
-                        : "Use the next prompt control to load the next gesture suggestion."}
+                      ? "Recording in progress"
+                      : "Ready"}
                 </p>
 
                 <div className="action-deck">
-                  <button type="button" className="primary-action" onClick={handleNextPrompt}>
-                    Next prompt
-                  </button>
-
-                  {prompt && !armedClip && !recording && !reviewClip ? (
-                    <button type="button" className="secondary-action" onClick={handleArmClip}>
-                      Arm clip
-                    </button>
-                  ) : null}
-
-                  {armedClip && !recording && !reviewClip ? (
+                  {prompt && !recording && !reviewClip ? (
                     <button type="button" className="record-action" onClick={handleStartRecording}>
                       Start recording
                     </button>
@@ -415,32 +399,30 @@ export function App({ api = apiClient, statusSource = createStatusSource() }) {
                       </button>
                     </>
                   ) : null}
+
+                  {!recording ? (
+                    <button type="button" className="secondary-action" onClick={handleRefreshPrompt}>
+                      Change prompt
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
-              <aside className="annotation-strip">
-                <div>
-                  <p className="kicker">Operator note</p>
-                  <p className="annotation-copy">
-                    Use this only when needed. The main stage should remain visually quiet.
-                  </p>
-                </div>
-                <div className="annotation-controls">
-                  <label className="annotation-input">
-                    <span className="sr-only">Clip note</span>
-                    <input
-                      aria-label="Clip note"
-                      value={clipNote}
-                      onChange={(event) => setClipNote(event.target.value)}
-                      placeholder="steady pinch, slight occlusion, prop slipped"
-                    />
-                  </label>
-                  <button type="button" className="secondary-action" onClick={handleSaveNote}>
-                    Save note
-                  </button>
-                </div>
-              </aside>
-            </div>
+              <div className="annotation-strip">
+                <label className="annotation-input">
+                  <span className="section-label">Clip note</span>
+                  <input
+                    aria-label="Clip note"
+                    value={clipNote}
+                    onChange={(event) => setClipNote(event.target.value)}
+                    placeholder="Optional note for this clip"
+                  />
+                </label>
+                <button type="button" className="secondary-action" onClick={handleSaveNote}>
+                  Save note
+                </button>
+              </div>
+            </section>
 
             <aside className="viewer-shell">
               <FocusedHandToggle

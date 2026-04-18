@@ -1,3 +1,12 @@
+function idleSnapshot() {
+  return {
+    current_state: "idle",
+    active_hands: "left",
+    hand_pose_preview: { left: [], right: [] },
+  };
+}
+
+
 async function request(path, options = {}) {
   const response = await fetch(path, {
     headers: {
@@ -13,40 +22,76 @@ async function request(path, options = {}) {
 }
 
 
+function startPolling(callback, intervalMs = 500) {
+  let active = true;
+
+  const tick = async () => {
+    try {
+      const snapshot = await request("/api/sessions/current");
+      if (active) {
+        callback(snapshot);
+      }
+    } catch {
+      if (active) {
+        callback(idleSnapshot());
+      }
+    }
+  };
+
+  tick();
+  const intervalId = setInterval(tick, intervalMs);
+
+  return () => {
+    active = false;
+    clearInterval(intervalId);
+  };
+}
+
+
 export function createStatusSource() {
   return {
     subscribe(callback) {
       if (typeof window === "undefined" || typeof window.WebSocket === "undefined") {
-        callback({
-          current_state: "idle",
-          active_hands: "left",
-          hand_pose_preview: { left: [], right: [] },
-        });
-        return () => {};
+        return startPolling(callback);
       }
 
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
       const socket = new window.WebSocket(`${protocol}://${window.location.host}/ws/status`);
+
+      let pollingCleanup = null;
+      let fallbackStarted = false;
+
+      const ensurePolling = () => {
+        if (fallbackStarted) {
+          return;
+        }
+        fallbackStarted = true;
+        pollingCleanup = startPolling(callback);
+      };
 
       socket.addEventListener("message", (event) => {
         callback(JSON.parse(event.data));
       });
 
       socket.addEventListener("error", () => {
-        callback({
-          current_state: "idle",
-          hand_pose_preview: { left: [], right: [] },
-        });
+        ensurePolling();
       });
 
-      return () => socket.close();
+      socket.addEventListener("close", () => {
+        ensurePolling();
+      });
+
+      return () => {
+        pollingCleanup?.();
+        socket.close();
+      };
     },
   };
 }
 
 
 export const apiClient = {
-  createSession: async ({ operatorId, activeHands, notes }) =>
+  createSession: async ({ operatorId = "", activeHands, notes }) =>
     request("/api/sessions", {
       method: "POST",
       body: JSON.stringify({
@@ -55,13 +100,10 @@ export const apiClient = {
         notes,
       }),
     }),
+  getCurrentSession: async () =>
+    request("/api/sessions/current"),
   getNextPrompt: async () =>
     request("/api/prompts/next", { method: "POST" }),
-  armClip: async (scenarioId) =>
-    request("/api/clips/arm", {
-      method: "POST",
-      body: JSON.stringify({ scenario_id: scenarioId }),
-    }),
   startClip: async () =>
     request("/api/clips/start", { method: "POST" }),
   stopClip: async () =>

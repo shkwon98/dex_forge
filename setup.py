@@ -49,6 +49,7 @@ setup(
         "fastapi>=0.115,<1.0",
         "pydantic>=2.10,<3.0",
         "uvicorn>=0.34,<1.0",
+        "websockets>=12,<16",
     ],
     zip_safe=True,
     maintainer="shkwon98",

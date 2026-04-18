@@ -90,6 +90,7 @@ class CollectionService:
         session = self._require_session()
         self.current_prompt = self.scenario_library.next_scenario(
             active_hands=session.active_hands,
+            current_scenario_id=self.current_prompt.id if self.current_prompt else None,
             recent_pairs=list(self.recent_pairs),
         )
         self._record_session_event(
@@ -113,8 +114,11 @@ class CollectionService:
         return clip
 
     def start_clip(self, start_time: datetime | None = None) -> ClipRecord:
-        if self.current_state is not RecorderState.ARMED or self.current_clip is None:
-            raise InvalidTransitionError("clip must be armed before recording starts")
+        if self.current_clip is None:
+            if self.current_prompt is None:
+                raise InvalidTransitionError("prompt must be selected before recording starts")
+            self.current_clip = self._build_clip_record(self.current_prompt)
+
         self.current_state = RecorderState.RECORDING
         self.current_clip.start_time = start_time or datetime.now(tz=UTC)
         self.buffered_messages = []
