@@ -79,6 +79,7 @@ function createStatusSource(initialSnapshot = {}) {
   const snapshot = {
     current_state: "idle",
     active_hands: "left",
+    accepted_clip_count: 0,
     hand_pose_preview: {
       left: [{ x: 0.2, y: 0.5, z: 0, frame_id: "left" }],
       right: [{ x: 0.75, y: 0.35, z: 0, frame_id: "right" }],
@@ -114,6 +115,7 @@ test("creates a session and keeps the chosen hand mode visible for later clips",
   await user.click(screen.getByRole("button", { name: /start session/i }));
 
   await screen.findByText(/do a precision pinch/i);
+  expect(screen.getByText(/saved 0/i)).toBeInTheDocument();
   expect(screen.getAllByText(/^right hand$/i).length).toBeGreaterThan(0);
   expect(screen.getByLabelText(/active hands/i)).toHaveValue("right");
 });
@@ -149,11 +151,12 @@ test("runs prompt, record, note, and review actions through the operator flow", 
   expect(screen.queryByRole("button", { name: /change prompt/i })).not.toBeInTheDocument();
   expect(screen.getByText(/recorded_left/i)).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /accept clip/i }));
+  statusSource.emit({ accepted_clip_count: 1 });
 
   await waitFor(() => {
     expect(decideClip).toHaveBeenCalledWith("clip-1", "accept");
   });
-  expect(screen.getByText(/last clip accepted/i)).toBeInTheDocument();
+  expect(screen.getByText(/saved 1/i)).toBeInTheDocument();
   await screen.findByText(/perform a power grasp/i);
 });
 

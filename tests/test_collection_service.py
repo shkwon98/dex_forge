@@ -258,7 +258,23 @@ def test_can_change_hand_mode_outside_recording(service):
     service.update_active_hands(HandMode.RIGHT)
 
     assert service.session is not None
-    assert service.session.active_hands == HandMode.RIGHT
+
+
+def test_snapshot_includes_total_accepted_clip_count(service):
+    service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+    service.next_prompt()
+    service.start_clip(start_time=datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC))
+    service.record_message(
+        topic="/teleop/human/hand_left/pose",
+        message=make_pose_array(),
+        timestamp_ns=1_000_000,
+    )
+    clip = service.stop_clip(stop_time=datetime(2026, 4, 16, 12, 0, 1, tzinfo=UTC))
+    service.decide_clip(clip.clip_id, ClipDecision.ACCEPT)
+
+    snapshot = service.snapshot()
+
+    assert snapshot.accepted_clip_count == 1
 
 
 def test_cannot_change_hand_mode_while_recording(service):

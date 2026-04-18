@@ -124,6 +124,7 @@ class SessionSnapshot(BaseModel):
     session_id: str | None
     active_hands: HandMode | None
     dataset_root: str | None = None
+    accepted_clip_count: int = 0
     current_state: RecorderState
     current_prompt: Scenario | None
     current_clip_id: str | None

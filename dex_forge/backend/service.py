@@ -252,6 +252,7 @@ class CollectionService:
             session_id=session_id,
             active_hands=active_hands,
             dataset_root=str(self.storage.dataset_root),
+            accepted_clip_count=self.session_outcomes.count(RecorderState.ACCEPTED.value),
             current_state=self.current_state,
             current_prompt=self.current_prompt,
             current_clip_id=clip_id,

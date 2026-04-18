@@ -91,12 +91,12 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
   const [reviewClip, setReviewClip] = useState(null);
   const [reviewFrameIndex, setReviewFrameIndex] = useState(0);
   const [clipNote, setClipNote] = useState("");
-  const [lastOutcome, setLastOutcome] = useState("");
   const [finishedSummary, setFinishedSummary] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [liveSnapshot, setLiveSnapshot] = useState({
     current_state: "idle",
     dataset_root: "",
+    accepted_clip_count: 0,
     hand_pose_preview: { left: [], right: [] },
     active_hands: "left",
   });
@@ -151,7 +151,6 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
       setSession(created);
       setDatasetRoot(created.dataset_root || datasetRoot);
       setPrompt(firstPrompt);
-      setLastOutcome("");
       setReviewClip(null);
       setFinishedSummary(null);
       setRecording(false);
@@ -253,13 +252,9 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
       setReviewClip(null);
       setRecording(false);
       if (result.status === "accepted") {
-        setLastOutcome("Last clip accepted");
         setPrompt(await api.getNextPrompt());
       } else if (result.status === "discarded") {
-        setLastOutcome("Last clip discarded");
         setPrompt(await api.getNextPrompt());
-      } else {
-        setLastOutcome("Retry ready");
       }
 
       const updatedHands = session?.active_hands ?? activeHands;
@@ -282,7 +277,6 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
       setPrompt(null);
       setReviewClip(null);
       setRecording(false);
-      setLastOutcome("");
     } catch (error) {
       setErrorMessage(error.message || "Failed to finish session.");
     }
@@ -297,6 +291,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
     ? "Review the recorded clip."
     : prompt?.prompt_text || "Loading prompt...";
   const datasetPathDescription = datasetRoot || liveSnapshot.dataset_root || "No dataset folder selected";
+  const acceptedClipCount = liveSnapshot.accepted_clip_count ?? 0;
 
   return (
     <div className="page-shell">
@@ -409,7 +404,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                     <option value="both">Both</option>
                   </select>
                 </label>
-                {lastOutcome ? <div className="header-chip">{lastOutcome}</div> : null}
+                <div className="header-chip">Saved {acceptedClipCount}</div>
               </div>
 
               <div className="prompt-stage">
