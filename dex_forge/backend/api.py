@@ -39,6 +39,27 @@ class AddNoteRequest(BaseModel):
     note: str
 
 
+def pick_dataset_root() -> str:
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        try:
+            selected = filedialog.askdirectory(
+                title="Select DexForge dataset root",
+                mustexist=False,
+            )
+        finally:
+            root.destroy()
+    except Exception as error:
+        raise RuntimeError("native directory picker unavailable") from error
+
+    return selected
+
+
 def resolve_web_dist(
     source_api_file: Path | None = None,
     package_share_dir: Path | None = None,
@@ -62,7 +83,11 @@ def resolve_web_dist(
     return source_dist
 
 
-def create_app(service: CollectionService, web_dist: Path | None = None) -> FastAPI:
+def create_app(
+    service: CollectionService,
+    web_dist: Path | None = None,
+    dataset_root_picker=pick_dataset_root,
+) -> FastAPI:
     app = FastAPI(title="DexForge")
     app.add_middleware(
         CORSMiddleware,
@@ -123,6 +148,13 @@ def create_app(service: CollectionService, web_dist: Path | None = None) -> Fast
         service.add_note(request.note)
         return {"ok": True}
 
+    @app.post("/api/system/pick-dataset-root")
+    def choose_dataset_root():
+        try:
+            return {"dataset_root": dataset_root_picker()}
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
     @app.get("/api/history")
     def history():
         return service.snapshot().recent_history
@@ -133,7 +165,7 @@ def create_app(service: CollectionService, web_dist: Path | None = None) -> Fast
         try:
             while True:
                 await websocket.send_json(service.snapshot().model_dump(mode="json"))
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1 / 30)
         except WebSocketDisconnect:
             return
         except Exception:

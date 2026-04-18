@@ -1,14 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { apiClient, createStatusSource } from "./api";
-import {
-  buildBoneChains,
-  buildViewerGuides,
-  defaultViewState,
-  projectHandPoints,
-  updateViewState,
-} from "./handView";
+import { ThreeHandViewer } from "./ThreeHandViewer";
 import "./styles.css";
+
+const RECENT_DATASET_ROOTS_KEY = "dexforge.recentDatasetRoots";
 
 
 function handModeLabel(activeHands) {
@@ -36,155 +32,18 @@ function promptMatchesHands(prompt, activeHands) {
 }
 
 
-function SkeletonViewer({ points, focusedHand }) {
-  const [viewState, setViewState] = useState(() => defaultViewState(focusedHand));
-  const dragRef = useRef(null);
-  const projected = useMemo(() => projectHandPoints(points, viewState), [points, viewState]);
-  const boneChains = useMemo(() => buildBoneChains(points?.length ?? 0), [points]);
-  const guides = useMemo(() => buildViewerGuides(points, viewState), [points, viewState]);
-
-  useEffect(() => {
-    setViewState(defaultViewState(focusedHand));
-  }, [focusedHand]);
-
-  function handlePointerDown(event) {
-    dragRef.current = { x: event.clientX, y: event.clientY };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  }
-
-  function handlePointerMove(event) {
-    if (!dragRef.current) {
-      return;
-    }
-    const deltaX = event.clientX - dragRef.current.x;
-    const deltaY = event.clientY - dragRef.current.y;
-    dragRef.current = { x: event.clientX, y: event.clientY };
-    setViewState((current) => updateViewState(current, deltaX, deltaY));
-  }
-
-  function handlePointerUp() {
-    dragRef.current = null;
-  }
-
-  function handleWheel(event) {
-    event.preventDefault();
-    const deltaZoom = event.deltaY < 0 ? 0.08 : -0.08;
-    setViewState((current) => updateViewState(current, 0, 0, deltaZoom));
-  }
-
-  return (
-    <section className="viewer-card">
-      <div className="viewer-header">
-        <div>
-          <p className="section-label">Live Hand</p>
-          <h2>{focusedHand === "left" ? "Left hand" : "Right hand"}</h2>
-          <p className="viewer-hint">Drag to orbit. Scroll to zoom.</p>
-        </div>
-        <div className={projected.length ? "viewer-status live" : "viewer-status"}>
-          {projected.length ? "Live" : "Waiting"}
-        </div>
-      </div>
-      <svg
-        aria-label="Hand skeleton viewer"
-        className="viewer-stage"
-        viewBox="0 0 320 280"
-        role="img"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
-        onWheel={handleWheel}
-      >
-        <rect x="18" y="18" width="284" height="244" rx="28" className="viewer-plate" />
-        {guides.grid.map((line, index) => (
-          <line
-            key={`grid-${index}`}
-            x1={line.start.px}
-            y1={line.start.py}
-            x2={line.end.px}
-            y2={line.end.py}
-            className="viewer-grid"
-          />
-        ))}
-        {guides.axes.map((axis) => (
-          <g key={axis.key}>
-            <line
-              x1={axis.start.px}
-              y1={axis.start.py}
-              x2={axis.end.px}
-              y2={axis.end.py}
-              className={`viewer-axis viewer-axis-${axis.key}`}
-            />
-            <text
-              x={axis.end.px + 6}
-              y={axis.end.py - 6}
-              className={`viewer-axis-label viewer-axis-label-${axis.key}`}
-            >
-              {axis.label}
-            </text>
-          </g>
-        ))}
-        {projected.length ? (
-          <>
-            <ellipse cx="160" cy="228" rx="82" ry="16" className="viewer-shadow" />
-            {boneChains.map((chain, index) =>
-              chain.slice(0, -1).map((jointIndex, segmentIndex) => {
-                const start = projected[jointIndex];
-                const end = projected[chain[segmentIndex + 1]];
-                if (!start || !end) {
-                  return null;
-                }
-                return (
-                  <line
-                    key={`${index}-${jointIndex}`}
-                    x1={start.px}
-                    y1={start.py}
-                    x2={end.px}
-                    y2={end.py}
-                    className="viewer-bone"
-                  />
-                );
-              }),
-            )}
-            {[...projected]
-              .sort((left, right) => left.depth - right.depth)
-              .map((point, index) => (
-              <circle
-                key={`${point.frame_id}-${index}`}
-                cx={point.px}
-                cy={point.py}
-                r={index === 0 ? 7 : 4.8}
-                className={index === 0 ? "viewer-joint viewer-joint-root" : "viewer-joint"}
-              />
-              ))}
-          </>
-        ) : (
-          <text x="160" y="146" textAnchor="middle" className="viewer-empty">
-            Waiting for pose stream
-          </text>
-        )}
-      </svg>
-      <div className="viewer-footer">
-        <span>{projected[0]?.frame_id || "No frame id"}</span>
-        <span>{projected.length} joints</span>
-      </div>
-    </section>
-  );
-}
-
-
 function LaunchViewerPanel({ activeHands, previews }) {
   if (activeHands === "both") {
     return (
       <div className="launch-viewers">
-        <SkeletonViewer points={previews.left} focusedHand="left" />
-        <SkeletonViewer points={previews.right} focusedHand="right" />
+        <ThreeHandViewer points={previews.left} focusedHand="left" />
+        <ThreeHandViewer points={previews.right} focusedHand="right" />
       </div>
     );
   }
 
   return (
-    <SkeletonViewer
+    <ThreeHandViewer
       points={activeHands === "right" ? previews.right : previews.left}
       focusedHand={activeHands === "right" ? "right" : "left"}
     />
@@ -223,11 +82,55 @@ function FocusedHandToggle({ activeHands, focusedHand, onChange }) {
 }
 
 
+function loadRecentDatasetRoots() {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(RECENT_DATASET_ROOTS_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+
+function storeRecentDatasetRoots(roots) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(RECENT_DATASET_ROOTS_KEY, JSON.stringify(roots.slice(0, 5)));
+}
+
+
+function rememberDatasetRoot(currentRoots, nextRoot) {
+  if (!nextRoot) {
+    return currentRoots;
+  }
+
+  const normalized = nextRoot.trim();
+  if (!normalized) {
+    return currentRoots;
+  }
+
+  const next = [normalized, ...currentRoots.filter((root) => root !== normalized)].slice(0, 5);
+  storeRecentDatasetRoots(next);
+  return next;
+}
+
+
 export function App({ api = apiClient, statusSource: providedStatusSource }) {
   const [statusSource] = useState(() => providedStatusSource ?? createStatusSource());
   const [activeHands, setActiveHands] = useState("left");
   const [sessionNotes, setSessionNotes] = useState("");
   const [datasetRoot, setDatasetRoot] = useState("");
+  const [recentDatasetRoots, setRecentDatasetRoots] = useState(() => loadRecentDatasetRoots());
   const [session, setSession] = useState(null);
   const [prompt, setPrompt] = useState(null);
   const [recording, setRecording] = useState(false);
@@ -293,6 +196,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
         notes: sessionNotes,
         datasetRoot,
       });
+      setRecentDatasetRoots((current) => rememberDatasetRoot(current, datasetRoot));
       const firstPrompt = await api.getNextPrompt();
       setSession(created);
       setPrompt(firstPrompt);
@@ -302,6 +206,19 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
       setRecording(false);
     } catch (error) {
       setErrorMessage(error.message || "Failed to start session.");
+    }
+  }
+
+  async function handleBrowseDatasetRoot() {
+    setErrorMessage("");
+    try {
+      const response = await api.pickDatasetRoot();
+      if (response.dataset_root) {
+        setDatasetRoot(response.dataset_root);
+        setRecentDatasetRoots((current) => rememberDatasetRoot(current, response.dataset_root));
+      }
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to choose a dataset directory.");
     }
   }
 
@@ -427,6 +344,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
   const promptHeadline = reviewClip
     ? "Review the recorded clip."
     : prompt?.prompt_text || "Loading prompt...";
+  const datasetPathDescription = datasetRoot || liveSnapshot.dataset_root || "No dataset root selected";
 
   return (
     <div className="page-shell">
@@ -475,13 +393,44 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
 
               <label>
                 Dataset root
-                <input
-                  aria-label="Dataset root"
-                  value={datasetRoot}
-                  onChange={(event) => setDatasetRoot(event.target.value)}
-                  placeholder="Where DexForge should save sessions and clips"
-                />
+                <div className="dataset-root-card">
+                  <div className="dataset-root-copy">
+                    <p className="dataset-root-label">Current location</p>
+                    <p className="dataset-root-path">{datasetPathDescription}</p>
+                    <p className="dataset-root-hint">
+                      DexForge writes sessions, clips, manifests, and MCAP files here.
+                    </p>
+                  </div>
+                  <div className="dataset-root-actions">
+                    <button
+                      type="button"
+                      aria-label="Choose folder"
+                      className="secondary-action"
+                      onClick={handleBrowseDatasetRoot}
+                    >
+                      Choose folder
+                    </button>
+                  </div>
+                </div>
               </label>
+
+              {recentDatasetRoots.length ? (
+                <div className="recent-roots">
+                  <p className="dataset-root-label">Recent locations</p>
+                  <div className="recent-root-list">
+                    {recentDatasetRoots.map((root) => (
+                      <button
+                        key={root}
+                        type="button"
+                        className={root === datasetRoot ? "recent-root-chip active" : "recent-root-chip"}
+                        onClick={() => setDatasetRoot(root)}
+                      >
+                        {root}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <button type="submit" className="primary-action">
                 Start session
@@ -610,7 +559,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                 focusedHand={focusedHand}
                 onChange={setFocusedHand}
               />
-              <SkeletonViewer points={visiblePoints} focusedHand={focusedHand} />
+              <ThreeHandViewer points={visiblePoints} focusedHand={focusedHand} />
             </aside>
           </section>
         )}

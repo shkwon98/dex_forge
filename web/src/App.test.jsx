@@ -1,8 +1,13 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
 import { App } from "./App";
+
+
+afterEach(() => {
+  window.localStorage.clear();
+});
 
 
 function createApi(overrides = {}) {
@@ -59,6 +64,9 @@ function createApi(overrides = {}) {
       discarded_count: 0,
       retried_count: 0,
       invalid_count: 0,
+    }),
+    pickDatasetRoot: async () => ({
+      dataset_root: "/tmp/chosen-dataset",
     }),
     addNote: async () => ({ ok: true }),
     ...overrides,
@@ -233,6 +241,41 @@ test("shows dataset root on launch and a finish-session summary screen", async (
 
   expect(await screen.findByText(/dataset root: \/tmp\/dataset/i)).toBeInTheDocument();
   expect(screen.getByText(/accepted clips: 1/i)).toBeInTheDocument();
+});
+
+
+test("fills dataset root from the native picker flow", async () => {
+  const user = userEvent.setup();
+  const pickDatasetRoot = vi.fn(async () => ({ dataset_root: "/tmp/chosen-dataset" }));
+  const api = createApi({ pickDatasetRoot });
+  const statusSource = createStatusSource();
+
+  render(<App api={api} statusSource={statusSource} />);
+
+  await user.click(screen.getByRole("button", { name: /choose folder/i }));
+
+  await waitFor(() => {
+    expect(pickDatasetRoot).toHaveBeenCalled();
+  });
+  expect(screen.getAllByText("/tmp/chosen-dataset").length).toBeGreaterThan(0);
+});
+
+
+test("shows and reuses recent dataset roots", async () => {
+  const user = userEvent.setup();
+  window.localStorage.setItem(
+    "dexforge.recentDatasetRoots",
+    JSON.stringify(["/tmp/alpha", "/tmp/beta"]),
+  );
+  const api = createApi();
+  const statusSource = createStatusSource();
+
+  render(<App api={api} statusSource={statusSource} />);
+
+  expect(screen.getByRole("button", { name: "/tmp/alpha" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "/tmp/beta" }));
+
+  expect(screen.getAllByText("/tmp/beta").length).toBeGreaterThan(0);
 });
 
 

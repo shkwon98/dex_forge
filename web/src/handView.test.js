@@ -1,27 +1,6 @@
 import { expect, test } from "vitest";
 
-import { buildBoneChains, buildViewerGuides, defaultViewState, projectHandPoints } from "./handView";
-
-
-test("projects hand points into a stable 3d view with depth ordering", () => {
-  const points = [
-    { x: 0, y: 0, z: 0, frame_id: "root" },
-    { x: 0.01, y: 0.05, z: -0.01, frame_id: "tip" },
-  ];
-
-  const projected = projectHandPoints(points, defaultViewState("left"));
-
-  expect(projected).toHaveLength(2);
-  expect(projected[0]).toEqual(
-    expect.objectContaining({
-      px: expect.any(Number),
-      py: expect.any(Number),
-      depth: expect.any(Number),
-    }),
-  );
-  expect(projected[0].px).not.toBe(projected[1].px);
-  expect(projected[0].py).not.toBe(projected[1].py);
-});
+import { buildBoneChains, buildBoneSegments, defaultCameraPosition, handBounds } from "./handView";
 
 
 test("builds palm and finger chains for 25-joint hands", () => {
@@ -33,20 +12,33 @@ test("builds palm and finger chains for 25-joint hands", () => {
 });
 
 
-test("builds grid and axis guides for orientation cues", () => {
+test("flattens chains into adjacent bone segments", () => {
+  const segments = buildBoneSegments(25);
+
+  expect(segments).toContainEqual([0, 1]);
+  expect(segments).toContainEqual([3, 4]);
+  expect(segments).toContainEqual([21, 22]);
+  expect(segments).toContainEqual([23, 24]);
+});
+
+
+test("computes stable hand bounds and a default camera position", () => {
   const points = [
-    { x: 0, y: 0, z: 0, frame_id: "root" },
-    { x: 0.02, y: 0.05, z: -0.01, frame_id: "tip" },
+    { x: -0.04, y: -0.01, z: -0.02 },
+    { x: 0.08, y: 0.16, z: 0.03 },
   ];
 
-  const guides = buildViewerGuides(points, defaultViewState("left"));
+  const bounds = handBounds(points);
+  const camera = defaultCameraPosition("left", bounds.extent);
 
-  expect(guides.grid.length).toBeGreaterThan(4);
-  expect(guides.axes).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ key: "x", label: "X" }),
-      expect.objectContaining({ key: "y", label: "Y" }),
-      expect.objectContaining({ key: "z", label: "Z" }),
-    ]),
+  expect(bounds.center).toEqual(
+    expect.objectContaining({
+      x: expect.closeTo(0.02, 5),
+      y: expect.closeTo(0.075, 5),
+      z: expect.closeTo(0.005, 5),
+    }),
   );
+  expect(bounds.extent).toBeGreaterThan(0.15);
+  expect(camera.x).toBeGreaterThan(0);
+  expect(camera.z).toBeGreaterThan(camera.y);
 });

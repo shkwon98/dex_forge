@@ -160,3 +160,37 @@ def test_api_accepts_dataset_root_and_finishes_session(tmp_path):
     finish_response = client.post("/api/sessions/finish")
     assert finish_response.status_code == 200
     assert finish_response.json()["dataset_root"] == str(tmp_path / "custom-dataset")
+
+
+def test_api_can_open_native_dataset_root_picker(tmp_path):
+    service = CollectionService(
+        dataset_root=tmp_path / "dataset",
+        scenarios=[
+            Scenario(
+                id="pinch",
+                category="pinch",
+                action="precision",
+                variation="thumb_index",
+                prompt_text="Do a precision pinch.",
+                difficulty="easy",
+                allowed_hands="either",
+                tags=["pinch"],
+            )
+        ],
+        scenario_version="test-v1",
+    )
+    web_dist = tmp_path / "web" / "dist"
+    web_dist.mkdir(parents=True)
+    web_dist.joinpath("index.html").write_text("<html>ui</html>")
+
+    app = create_app(
+        service,
+        web_dist=web_dist,
+        dataset_root_picker=lambda: str(tmp_path / "picked-dataset"),
+    )
+    client = TestClient(app)
+
+    response = client.post("/api/system/pick-dataset-root")
+
+    assert response.status_code == 200
+    assert response.json()["dataset_root"] == str(tmp_path / "picked-dataset")

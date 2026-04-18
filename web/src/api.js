@@ -22,7 +22,7 @@ async function request(path, options = {}) {
 }
 
 
-function startPolling(callback, intervalMs = 500) {
+function startPolling(callback, intervalMs = 100) {
   let active = true;
 
   const tick = async () => {
@@ -121,6 +121,10 @@ export const apiClient = {
     }),
   finishSession: async () =>
     request("/api/sessions/finish", {
+      method: "POST",
+    }),
+  pickDatasetRoot: async () =>
+    request("/api/system/pick-dataset-root", {
       method: "POST",
     }),
   addNote: async (note) =>
