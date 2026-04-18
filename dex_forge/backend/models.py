@@ -98,6 +98,7 @@ class ClipRecord(BaseModel):
     status: RecorderState
     failure_reason: str | None = None
     operator_note: str = ""
+    review_preview: dict[str, list[list[HandPosePoint]]] = Field(default_factory=dict)
     clip_dir: Path
 
     def manifest_payload(self) -> dict[str, Any]:
@@ -122,6 +123,7 @@ class ClipRecord(BaseModel):
 class SessionSnapshot(BaseModel):
     session_id: str | None
     active_hands: HandMode | None
+    dataset_root: str | None = None
     current_state: RecorderState
     current_prompt: Scenario | None
     current_clip_id: str | None

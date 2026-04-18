@@ -108,6 +108,55 @@ def test_next_prompt_rotates_to_a_different_scenario_before_repeating(tmp_path):
     assert second.id != first.id
 
 
+def test_next_prompt_cycles_through_all_eligible_scenarios_before_repeating(tmp_path):
+    scenarios = [
+        Scenario(
+            id="prompt-a",
+            category="grasp",
+            action="power",
+            variation="a",
+            prompt_text="Prompt A",
+            difficulty="easy",
+            allowed_hands="either",
+            tags=[],
+        ),
+        Scenario(
+            id="prompt-b",
+            category="pinch",
+            action="precision",
+            variation="b",
+            prompt_text="Prompt B",
+            difficulty="easy",
+            allowed_hands="either",
+            tags=[],
+        ),
+        Scenario(
+            id="prompt-c",
+            category="gesture",
+            action="spread",
+            variation="c",
+            prompt_text="Prompt C",
+            difficulty="easy",
+            allowed_hands="both",
+            tags=[],
+        ),
+    ]
+    service = CollectionService(
+        dataset_root=tmp_path / "dataset",
+        scenarios=scenarios,
+        scenario_version="test-v1",
+        min_duration_sec=0.05,
+        min_frames_per_topic=1,
+    )
+    service.create_session(operator_id="operator", active_hands=HandMode.BOTH)
+
+    seen = [service.next_prompt().id for _ in range(3)]
+    repeated = service.next_prompt().id
+
+    assert seen == ["prompt-a", "prompt-b", "prompt-c"]
+    assert repeated == "prompt-a"
+
+
 def test_stop_writes_clip_outputs_and_mcap_for_left_hand(service):
     service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
     prompt = service.next_prompt()
@@ -130,6 +179,7 @@ def test_stop_writes_clip_outputs_and_mcap_for_left_hand(service):
     clip = service.stop_clip(stop_time=stop_time)
 
     assert clip.status == RecorderState.REVIEW
+    assert clip.review_preview["left"][0][0]["frame_id"] == "hand_frame"
     assert clip.frame_counts["/teleop/human/hand_left/pose"] == 2
     assert clip.recorded_topics == [
         "/collector/events",
@@ -179,6 +229,47 @@ def test_retry_preserves_original_clip_and_arms_replacement(service):
     assert service.current_state == RecorderState.ARMED
 
 
+def test_accept_clears_clip_state_and_allows_followup_recording(service):
+    service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+    service.next_prompt()
+    service.start_clip(start_time=datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC))
+    service.record_message(
+        topic="/teleop/human/hand_left/pose",
+        message=make_pose_array(),
+        timestamp_ns=1_000_000,
+    )
+    first_clip = service.stop_clip(stop_time=datetime(2026, 4, 16, 12, 0, 1, tzinfo=UTC))
+
+    service.decide_clip(first_clip.clip_id, ClipDecision.ACCEPT)
+
+    assert service.current_clip is None
+    assert service.current_state == RecorderState.IDLE
+
+    service.next_prompt()
+    second_clip = service.start_clip(start_time=datetime(2026, 4, 16, 12, 1, 0, tzinfo=UTC))
+
+    assert second_clip.clip_id != first_clip.clip_id
+
+
+def test_can_change_hand_mode_outside_recording(service):
+    service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+    service.next_prompt()
+
+    service.update_active_hands(HandMode.RIGHT)
+
+    assert service.session is not None
+    assert service.session.active_hands == HandMode.RIGHT
+
+
+def test_cannot_change_hand_mode_while_recording(service):
+    service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+    service.next_prompt()
+    service.start_clip(start_time=datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC))
+
+    with pytest.raises(InvalidTransitionError):
+        service.update_active_hands(HandMode.RIGHT)
+
+
 def test_add_note_is_written_to_event_log(service):
     service.create_session(operator_id="operator", active_hands=HandMode.RIGHT)
     prompt = service.next_prompt()
@@ -217,3 +308,57 @@ def test_snapshot_includes_live_hand_pose_preview_outside_recording(service):
 
     assert snapshot.hand_pose_preview["left"][0]["x"] == 1.0
     assert snapshot.hand_pose_preview["right"][0]["frame_id"] == "right_preview"
+
+
+def test_create_session_can_override_dataset_root(tmp_path):
+    scenarios = [
+        Scenario(
+            id="pinch",
+            category="pinch",
+            action="precision",
+            variation="thumb_index",
+            prompt_text="Do a precision pinch.",
+            difficulty="easy",
+            allowed_hands="either",
+            tags=["pinch"],
+        )
+    ]
+    service = CollectionService(
+        dataset_root=tmp_path / "dataset-a",
+        scenarios=scenarios,
+        scenario_version="test-v1",
+        min_duration_sec=0.05,
+        min_frames_per_topic=1,
+    )
+
+    session = service.create_session(
+        operator_id="operator",
+        active_hands=HandMode.LEFT,
+        dataset_root=tmp_path / "dataset-b",
+    )
+
+    assert service.storage.dataset_root == tmp_path / "dataset-b"
+    assert (tmp_path / "dataset-b" / "sessions" / session.session_id / "session_manifest.json").exists()
+
+
+def test_finish_session_returns_summary_with_dataset_root(service):
+    session = service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+    service.next_prompt()
+    service.start_clip(start_time=datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC))
+    service.record_message(
+        topic="/teleop/human/hand_left/pose",
+        message=make_pose_array(),
+        timestamp_ns=1_000_000,
+    )
+    clip = service.stop_clip(stop_time=datetime(2026, 4, 16, 12, 0, 1, tzinfo=UTC))
+    service.decide_clip(clip.clip_id, ClipDecision.ACCEPT)
+
+    summary = service.finish_session()
+
+    assert summary["session_id"] == session.session_id
+    assert summary["accepted_count"] == 1
+    assert summary["dataset_root"] == str(service.storage.dataset_root)
+    assert service.session is None
+    assert service.current_prompt is None
+    assert service.current_clip is None
+    assert service.current_state == RecorderState.IDLE

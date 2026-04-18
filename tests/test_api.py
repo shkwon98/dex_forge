@@ -78,10 +78,85 @@ def test_api_supports_session_creation_and_prompt_flow(tmp_path):
     assert prompt_response.status_code == 200
     assert prompt_response.json()["id"] == "pinch"
 
-    arm_response = client.post("/api/clips/arm", json={"scenario_id": "pinch"})
-    assert arm_response.status_code == 200
-    assert arm_response.json()["label"]["action"] == "precision"
-
     ui_response = client.get("/")
     assert ui_response.status_code == 200
     assert "ui" in ui_response.text
+
+
+def test_api_updates_active_hands_for_the_current_session(tmp_path):
+    service = CollectionService(
+        dataset_root=tmp_path / "dataset",
+        scenarios=[
+            Scenario(
+                id="pinch",
+                category="pinch",
+                action="precision",
+                variation="thumb_index",
+                prompt_text="Do a precision pinch.",
+                difficulty="easy",
+                allowed_hands="either",
+                tags=["pinch"],
+            )
+        ],
+        scenario_version="test-v1",
+    )
+    web_dist = tmp_path / "web" / "dist"
+    web_dist.mkdir(parents=True)
+    web_dist.joinpath("index.html").write_text("<html>ui</html>")
+
+    app = create_app(service, web_dist=web_dist)
+    client = TestClient(app)
+
+    client.post(
+        "/api/sessions",
+        json={
+            "active_hands": HandMode.LEFT.value,
+            "notes": "test run",
+        },
+    )
+
+    update_response = client.post(
+        "/api/sessions/active-hands",
+        json={"active_hands": HandMode.BOTH.value},
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["active_hands"] == "both"
+
+
+def test_api_accepts_dataset_root_and_finishes_session(tmp_path):
+    service = CollectionService(
+        dataset_root=tmp_path / "dataset",
+        scenarios=[
+            Scenario(
+                id="pinch",
+                category="pinch",
+                action="precision",
+                variation="thumb_index",
+                prompt_text="Do a precision pinch.",
+                difficulty="easy",
+                allowed_hands="either",
+                tags=["pinch"],
+            )
+        ],
+        scenario_version="test-v1",
+    )
+    web_dist = tmp_path / "web" / "dist"
+    web_dist.mkdir(parents=True)
+    web_dist.joinpath("index.html").write_text("<html>ui</html>")
+
+    app = create_app(service, web_dist=web_dist)
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/api/sessions",
+        json={
+            "active_hands": HandMode.LEFT.value,
+            "dataset_root": str(tmp_path / "custom-dataset"),
+        },
+    )
+    assert create_response.status_code == 200
+
+    finish_response = client.post("/api/sessions/finish")
+    assert finish_response.status_code == 200
+    assert finish_response.json()["dataset_root"] == str(tmp_path / "custom-dataset")

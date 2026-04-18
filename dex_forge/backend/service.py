@@ -35,6 +35,7 @@ class CollectionService:
         min_duration_sec: float = 0.25,
         min_frames_per_topic: int = 5,
     ):
+        self.scenario_version = scenario_version
         self.storage = DatasetStorage(Path(dataset_root))
         self.storage.write_scenario_version(scenario_version)
         self.scenario_library = ScenarioLibrary(version=scenario_version, scenarios=scenarios)
@@ -57,14 +58,19 @@ class CollectionService:
             "right": [],
         }
         self.session_notes: list[str] = []
+        self.session_outcomes: list[str] = []
 
     def create_session(
         self,
         operator_id: str,
         active_hands: HandMode,
         notes: str = "",
+        dataset_root: Path | str | None = None,
         collection_setup: dict[str, Any] | None = None,
     ) -> SessionRecord:
+        if dataset_root:
+            self.storage = DatasetStorage(Path(dataset_root).expanduser().resolve())
+            self.storage.write_scenario_version(self.scenario_version)
         session_id = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S") + "_" + uuid4().hex[:6]
         self.session = SessionRecord(
             session_id=session_id,
@@ -83,8 +89,30 @@ class CollectionService:
         self.pending_clip_events = []
         self.hand_pose_preview = {"left": [], "right": []}
         self.session_notes = []
+        self.session_outcomes = []
         self.storage.write_session_manifest(self.session)
         return self.session
+
+    def update_active_hands(self, active_hands: HandMode) -> SessionRecord:
+        session = self._require_session()
+        if self.current_state is RecorderState.RECORDING:
+            raise InvalidTransitionError("active hands cannot change while recording")
+
+        session.active_hands = active_hands
+
+        if (
+            self.current_state is RecorderState.ARMED
+            and self.current_clip is not None
+            and self.current_clip.start_time is None
+        ):
+            self.current_clip = None
+            self.current_state = RecorderState.IDLE
+
+        if self.current_prompt and not self.scenario_library.supports(active_hands, self.current_prompt):
+            self.current_prompt = None
+
+        self.storage.write_session_manifest(session)
+        return session
 
     def next_prompt(self) -> Scenario:
         session = self._require_session()
@@ -117,6 +145,7 @@ class CollectionService:
         if self.current_clip is None:
             if self.current_prompt is None:
                 raise InvalidTransitionError("prompt must be selected before recording starts")
+            self.armed_scenario = self.current_prompt
             self.current_clip = self._build_clip_record(self.current_prompt)
 
         self.current_state = RecorderState.RECORDING
@@ -161,10 +190,12 @@ class CollectionService:
             clip.failure_reason = failure_reason
             self._append_event("sanity_check_failed", {"reason": failure_reason})
             self.current_state = RecorderState.INVALID
+            self.session_outcomes.append(RecorderState.INVALID.value)
         else:
             clip.status = RecorderState.REVIEW
             self.current_state = RecorderState.REVIEW
 
+        clip.review_preview = self._build_review_preview()
         self.writer.write(Path(clip.bag_path), bag_messages)
         self.storage.write_events(clip.clip_dir, self.pending_clip_events)
         self.storage.write_clip_manifest(clip)
@@ -199,6 +230,11 @@ class CollectionService:
         self.storage.write_clip_manifest(clip)
         self.recent_pairs.append((clip.label.category, clip.label.action))
         self._record_history(clip)
+        self.session_outcomes.append(clip.status.value)
+        self.current_clip = None
+        self.pending_clip_events = []
+        self.buffered_messages = []
+        self.armed_scenario = None
         return clip
 
     def add_note(self, note: str) -> None:
@@ -215,6 +251,7 @@ class CollectionService:
         return SessionSnapshot(
             session_id=session_id,
             active_hands=active_hands,
+            dataset_root=str(self.storage.dataset_root),
             current_state=self.current_state,
             current_prompt=self.current_prompt,
             current_clip_id=clip_id,
@@ -222,6 +259,39 @@ class CollectionService:
             topic_health=self.topic_health,
             recent_history=self.history[-10:],
         )
+
+    def finish_session(self) -> dict[str, Any]:
+        session = self._require_session()
+        if self.current_state is RecorderState.RECORDING:
+            raise InvalidTransitionError("session cannot finish while recording")
+        if self.current_state in {RecorderState.REVIEW, RecorderState.INVALID}:
+            raise InvalidTransitionError("session cannot finish while a clip is awaiting review")
+
+        session.ended_at = datetime.now(tz=UTC)
+        self.storage.write_session_manifest(session)
+
+        summary = {
+            "session_id": session.session_id,
+            "dataset_root": str(self.storage.dataset_root),
+            "accepted_count": self.session_outcomes.count(RecorderState.ACCEPTED.value),
+            "discarded_count": self.session_outcomes.count(RecorderState.DISCARDED.value),
+            "retried_count": self.session_outcomes.count(RecorderState.RETRIED.value),
+            "invalid_count": self.session_outcomes.count(RecorderState.INVALID.value),
+            "total_clips": len(self.session_outcomes),
+            "ended_at": session.ended_at.isoformat(),
+        }
+
+        self.session = None
+        self.current_prompt = None
+        self.armed_scenario = None
+        self.current_clip = None
+        self.current_state = RecorderState.IDLE
+        self.pending_clip_events = []
+        self.buffered_messages = []
+        self.session_notes = []
+        self.session_outcomes = []
+
+        return summary
 
     def _build_bag_messages(self) -> list[BufferedMessage]:
         event_messages = []
@@ -234,6 +304,14 @@ class CollectionService:
                 )
             )
         return [*event_messages, *self.buffered_messages]
+
+    def _build_review_preview(self) -> dict[str, list[list[HandPosePoint]]]:
+        preview: dict[str, list[list[HandPosePoint]]] = {"left": [], "right": []}
+        for item in self.buffered_messages:
+            hand_key = self._hand_key_for_topic(item.topic)
+            if hand_key and isinstance(item.message, PoseArray):
+                preview[hand_key].append(self._pose_array_preview(item.message))
+        return preview
 
     def _required_topics(self) -> list[str]:
         session = self._require_session()

@@ -19,7 +19,12 @@ class CreateSessionRequest(BaseModel):
     operator_id: str = ""
     active_hands: HandMode
     notes: str = ""
+    dataset_root: str = ""
     collection_setup: dict = {}
+
+
+class UpdateActiveHandsRequest(BaseModel):
+    active_hands: HandMode
 
 
 class ArmClipRequest(BaseModel):
@@ -77,12 +82,21 @@ def create_app(service: CollectionService, web_dist: Path | None = None) -> Fast
             operator_id=request.operator_id,
             active_hands=request.active_hands,
             notes=request.notes,
+            dataset_root=request.dataset_root or None,
             collection_setup=request.collection_setup,
         )
 
     @app.get("/api/sessions/current")
     def current_session():
         return service.snapshot()
+
+    @app.post("/api/sessions/active-hands")
+    def update_active_hands(request: UpdateActiveHandsRequest):
+        return service.update_active_hands(request.active_hands)
+
+    @app.post("/api/sessions/finish")
+    def finish_session():
+        return service.finish_session()
 
     @app.post("/api/prompts/next")
     def next_prompt():

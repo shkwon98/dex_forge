@@ -24,18 +24,89 @@ def build_dummy_pose_array(hand: str, tick: int) -> PoseArray:
     message = PoseArray()
     message.header.frame_id = f"dex_forge_dummy_{hand}"
     mirror = 1.0 if hand == "left" else -1.0
-    sway = math.sin(tick * 0.12) * 0.006
+    sway = math.sin(tick * 0.08) * 0.0024
+    flex = 0.36 + 0.18 * math.sin(tick * 0.09)
 
-    for finger_index in range(5):
-        for joint_index in range(5):
-            pose = Pose()
-            pose.position = Point(
-                x=mirror * (0.02 + finger_index * 0.018 + joint_index * 0.009 + sway),
-                y=0.025 + finger_index * 0.026 + joint_index * 0.014,
-                z=0.01 * math.sin((tick * 0.18) + finger_index * 0.4 + joint_index * 0.22),
-            )
-            pose.orientation = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
-            message.poses.append(pose)
+    thumb_base = (0.034, 0.012, -0.01)
+    index_base = (0.02, 0.04, -0.004)
+    middle_base = (0.002, 0.047, 0.0)
+    ring_base = (-0.018, 0.043, 0.004)
+    pinky_base = (-0.036, 0.034, 0.008)
+
+    finger_specs = [
+        {
+            "base": thumb_base,
+            "direction": (0.82, 0.44, -0.14),
+            "lengths": (0.018, 0.016, 0.014, 0.012),
+            "spread": 0.012,
+            "curl_scale": 0.42,
+        },
+        {
+            "base": index_base,
+            "direction": (0.16, 0.99, -0.03),
+            "lengths": (0.024, 0.019, 0.016, 0.014),
+            "spread": 0.008,
+            "curl_scale": 0.66,
+        },
+        {
+            "base": middle_base,
+            "direction": (0.04, 1.0, 0.0),
+            "lengths": (0.026, 0.021, 0.017, 0.014),
+            "spread": 0.003,
+            "curl_scale": 0.74,
+        },
+        {
+            "base": ring_base,
+            "direction": (-0.12, 0.99, 0.05),
+            "lengths": (0.024, 0.02, 0.016, 0.013),
+            "spread": -0.006,
+            "curl_scale": 0.7,
+        },
+        {
+            "base": pinky_base,
+            "direction": (-0.22, 0.96, 0.1),
+            "lengths": (0.02, 0.017, 0.014, 0.012),
+            "spread": -0.012,
+            "curl_scale": 0.62,
+        },
+    ]
+
+    landmarks = [(0.0, 0.0, 0.0)]
+
+    for finger_index, spec in enumerate(finger_specs):
+        base_x, base_y, base_z = spec["base"]
+        dir_x, dir_y, dir_z = spec["direction"]
+        spread = spec["spread"]
+        curl = flex * spec["curl_scale"] + 0.08 * math.sin(tick * 0.07 + finger_index * 0.5)
+        accum = 0.0
+        for joint_index, segment in enumerate(spec["lengths"]):
+            accum += segment
+            bend = curl * (joint_index + 1)
+            reach = math.cos(bend) * accum
+            fold = math.sin(bend) * accum
+            x = base_x + dir_x * reach + spread * (joint_index + 1)
+            y = base_y + dir_y * reach - 0.001 * joint_index
+            z = base_z + dir_z * reach - fold * (0.58 if finger_index > 0 else 0.34)
+            landmarks.append((x + sway, y, z))
+
+    landmarks.extend(
+        [
+            ((thumb_base[0] + index_base[0]) * 0.5, 0.024, -0.006),
+            ((index_base[0] + middle_base[0]) * 0.5, 0.034, -0.001),
+            ((middle_base[0] + ring_base[0]) * 0.5, 0.036, 0.002),
+            ((ring_base[0] + pinky_base[0]) * 0.5, 0.03, 0.006),
+        ]
+    )
+
+    for x, y, z in landmarks:
+        pose = Pose()
+        pose.position = Point(
+            x=mirror * x,
+            y=y,
+            z=z,
+        )
+        pose.orientation = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
+        message.poses.append(pose)
 
     return message
 

@@ -1,17 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiClient, createStatusSource } from "./api";
+import {
+  buildBoneChains,
+  buildViewerGuides,
+  defaultViewState,
+  projectHandPoints,
+  updateViewState,
+} from "./handView";
 import "./styles.css";
-
-
-const BONE_CHAINS = [
-  [0, 1, 2, 3, 4],
-  [0, 5, 6, 7, 8],
-  [0, 9, 10, 11, 12],
-  [0, 13, 14, 15, 16],
-  [0, 17, 18, 19, 20],
-  [0, 21, 22, 23, 24],
-];
 
 
 function handModeLabel(activeHands) {
@@ -25,30 +22,55 @@ function handModeLabel(activeHands) {
 }
 
 
-function normalizePoints(points) {
-  if (!points?.length) {
-    return [];
+function promptMatchesHands(prompt, activeHands) {
+  if (!prompt) {
+    return false;
   }
-
-  const xs = points.map((point) => point.x);
-  const ys = points.map((point) => point.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const width = Math.max(maxX - minX, 0.001);
-  const height = Math.max(maxY - minY, 0.001);
-
-  return points.map((point) => ({
-    ...point,
-    nx: 44 + ((point.x - minX) / width) * 232,
-    ny: 236 - ((point.y - minY) / height) * 180,
-  }));
+  if (activeHands === "left") {
+    return prompt.allowed_hands === "left" || prompt.allowed_hands === "either";
+  }
+  if (activeHands === "right") {
+    return prompt.allowed_hands === "right" || prompt.allowed_hands === "either";
+  }
+  return ["left", "right", "both", "either"].includes(prompt.allowed_hands);
 }
 
 
 function SkeletonViewer({ points, focusedHand }) {
-  const normalized = normalizePoints(points);
+  const [viewState, setViewState] = useState(() => defaultViewState(focusedHand));
+  const dragRef = useRef(null);
+  const projected = useMemo(() => projectHandPoints(points, viewState), [points, viewState]);
+  const boneChains = useMemo(() => buildBoneChains(points?.length ?? 0), [points]);
+  const guides = useMemo(() => buildViewerGuides(points, viewState), [points, viewState]);
+
+  useEffect(() => {
+    setViewState(defaultViewState(focusedHand));
+  }, [focusedHand]);
+
+  function handlePointerDown(event) {
+    dragRef.current = { x: event.clientX, y: event.clientY };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function handlePointerMove(event) {
+    if (!dragRef.current) {
+      return;
+    }
+    const deltaX = event.clientX - dragRef.current.x;
+    const deltaY = event.clientY - dragRef.current.y;
+    dragRef.current = { x: event.clientX, y: event.clientY };
+    setViewState((current) => updateViewState(current, deltaX, deltaY));
+  }
+
+  function handlePointerUp() {
+    dragRef.current = null;
+  }
+
+  function handleWheel(event) {
+    event.preventDefault();
+    const deltaZoom = event.deltaY < 0 ? 0.08 : -0.08;
+    setViewState((current) => updateViewState(current, 0, 0, deltaZoom));
+  }
 
   return (
     <section className="viewer-card">
@@ -56,9 +78,10 @@ function SkeletonViewer({ points, focusedHand }) {
         <div>
           <p className="section-label">Live Hand</p>
           <h2>{focusedHand === "left" ? "Left hand" : "Right hand"}</h2>
+          <p className="viewer-hint">Drag to orbit. Scroll to zoom.</p>
         </div>
-        <div className={normalized.length ? "viewer-status live" : "viewer-status"}>
-          {normalized.length ? "Live" : "Waiting"}
+        <div className={projected.length ? "viewer-status live" : "viewer-status"}>
+          {projected.length ? "Live" : "Waiting"}
         </div>
       </div>
       <svg
@@ -66,38 +89,74 @@ function SkeletonViewer({ points, focusedHand }) {
         className="viewer-stage"
         viewBox="0 0 320 280"
         role="img"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
+        onWheel={handleWheel}
       >
         <rect x="18" y="18" width="284" height="244" rx="28" className="viewer-plate" />
-        {normalized.length ? (
+        {guides.grid.map((line, index) => (
+          <line
+            key={`grid-${index}`}
+            x1={line.start.px}
+            y1={line.start.py}
+            x2={line.end.px}
+            y2={line.end.py}
+            className="viewer-grid"
+          />
+        ))}
+        {guides.axes.map((axis) => (
+          <g key={axis.key}>
+            <line
+              x1={axis.start.px}
+              y1={axis.start.py}
+              x2={axis.end.px}
+              y2={axis.end.py}
+              className={`viewer-axis viewer-axis-${axis.key}`}
+            />
+            <text
+              x={axis.end.px + 6}
+              y={axis.end.py - 6}
+              className={`viewer-axis-label viewer-axis-label-${axis.key}`}
+            >
+              {axis.label}
+            </text>
+          </g>
+        ))}
+        {projected.length ? (
           <>
-            {BONE_CHAINS.map((chain, index) =>
+            <ellipse cx="160" cy="228" rx="82" ry="16" className="viewer-shadow" />
+            {boneChains.map((chain, index) =>
               chain.slice(0, -1).map((jointIndex, segmentIndex) => {
-                const start = normalized[jointIndex];
-                const end = normalized[chain[segmentIndex + 1]];
+                const start = projected[jointIndex];
+                const end = projected[chain[segmentIndex + 1]];
                 if (!start || !end) {
                   return null;
                 }
                 return (
                   <line
                     key={`${index}-${jointIndex}`}
-                    x1={start.nx}
-                    y1={start.ny}
-                    x2={end.nx}
-                    y2={end.ny}
+                    x1={start.px}
+                    y1={start.py}
+                    x2={end.px}
+                    y2={end.py}
                     className="viewer-bone"
                   />
                 );
               }),
             )}
-            {normalized.map((point, index) => (
+            {[...projected]
+              .sort((left, right) => left.depth - right.depth)
+              .map((point, index) => (
               <circle
                 key={`${point.frame_id}-${index}`}
-                cx={point.nx}
-                cy={point.ny}
-                r={index === 0 ? 7 : 5}
+                cx={point.px}
+                cy={point.py}
+                r={index === 0 ? 7 : 4.8}
                 className={index === 0 ? "viewer-joint viewer-joint-root" : "viewer-joint"}
               />
-            ))}
+              ))}
           </>
         ) : (
           <text x="160" y="146" textAnchor="middle" className="viewer-empty">
@@ -106,8 +165,8 @@ function SkeletonViewer({ points, focusedHand }) {
         )}
       </svg>
       <div className="viewer-footer">
-        <span>{normalized[0]?.frame_id || "No frame id"}</span>
-        <span>{normalized.length} joints</span>
+        <span>{projected[0]?.frame_id || "No frame id"}</span>
+        <span>{projected.length} joints</span>
       </div>
     </section>
   );
@@ -168,15 +227,19 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
   const [statusSource] = useState(() => providedStatusSource ?? createStatusSource());
   const [activeHands, setActiveHands] = useState("left");
   const [sessionNotes, setSessionNotes] = useState("");
+  const [datasetRoot, setDatasetRoot] = useState("");
   const [session, setSession] = useState(null);
   const [prompt, setPrompt] = useState(null);
   const [recording, setRecording] = useState(false);
   const [reviewClip, setReviewClip] = useState(null);
+  const [reviewFrameIndex, setReviewFrameIndex] = useState(0);
   const [clipNote, setClipNote] = useState("");
   const [lastOutcome, setLastOutcome] = useState("");
+  const [finishedSummary, setFinishedSummary] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [liveSnapshot, setLiveSnapshot] = useState({
     current_state: "idle",
+    dataset_root: "",
     hand_pose_preview: { left: [], right: [] },
     active_hands: "left",
   });
@@ -198,6 +261,29 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
     }
   }, [activeHands, session?.active_hands]);
 
+  useEffect(() => {
+    if (!session && !datasetRoot && liveSnapshot.dataset_root) {
+      setDatasetRoot(liveSnapshot.dataset_root);
+    }
+  }, [datasetRoot, liveSnapshot.dataset_root, session]);
+
+  useEffect(() => {
+    setReviewFrameIndex(0);
+  }, [focusedHand, reviewClip?.clip_id]);
+
+  useEffect(() => {
+    const reviewFrames = reviewClip?.review_preview?.[focusedHand] ?? [];
+    if (!reviewClip || reviewFrames.length <= 1) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setReviewFrameIndex((current) => (current + 1) % reviewFrames.length);
+    }, 220);
+
+    return () => window.clearInterval(intervalId);
+  }, [focusedHand, reviewClip]);
+
   async function handleStartSession(event) {
     event.preventDefault();
     setErrorMessage("");
@@ -205,12 +291,14 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
       const created = await api.createSession({
         activeHands,
         notes: sessionNotes,
+        datasetRoot,
       });
       const firstPrompt = await api.getNextPrompt();
       setSession(created);
       setPrompt(firstPrompt);
       setLastOutcome("");
       setReviewClip(null);
+      setFinishedSummary(null);
       setRecording(false);
     } catch (error) {
       setErrorMessage(error.message || "Failed to start session.");
@@ -226,6 +314,26 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
       setRecording(false);
     } catch (error) {
       setErrorMessage(error.message || "Failed to load a prompt.");
+    }
+  }
+
+  async function handleActiveHandsChange(nextHands) {
+    if (!session || recording) {
+      return;
+    }
+
+    setErrorMessage("");
+    try {
+      const updatedSession = await api.updateActiveHands(nextHands);
+      setSession((current) => ({ ...current, ...updatedSession }));
+      setActiveHands(updatedSession.active_hands);
+
+      if (!reviewClip && !promptMatchesHands(prompt, updatedSession.active_hands)) {
+        const nextPrompt = await api.getNextPrompt();
+        setPrompt(nextPrompt);
+      }
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to update active hands.");
     }
   }
 
@@ -278,18 +386,44 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
       setRecording(false);
       if (result.status === "accepted") {
         setLastOutcome("Last clip accepted");
+        setPrompt(await api.getNextPrompt());
       } else if (result.status === "discarded") {
         setLastOutcome("Last clip discarded");
+        setPrompt(await api.getNextPrompt());
       } else {
         setLastOutcome("Retry ready");
+      }
+
+      const updatedHands = session?.active_hands ?? activeHands;
+      if (!promptMatchesHands(prompt, updatedHands)) {
+        const nextPrompt = await api.getNextPrompt();
+        setPrompt(nextPrompt);
       }
     } catch (error) {
       setErrorMessage(error.message || "Failed to update clip decision.");
     }
   }
 
+  async function handleFinishSession() {
+    setErrorMessage("");
+    try {
+      const summary = await api.finishSession();
+      setFinishedSummary(summary);
+      setSession(null);
+      setPrompt(null);
+      setReviewClip(null);
+      setRecording(false);
+      setLastOutcome("");
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to finish session.");
+    }
+  }
+
   const currentMode = session?.active_hands ?? activeHands;
-  const visiblePoints = liveSnapshot.hand_pose_preview?.[focusedHand] ?? [];
+  const reviewFrames = reviewClip?.review_preview?.[focusedHand] ?? [];
+  const visiblePoints = reviewClip
+    ? (reviewFrames[reviewFrameIndex % Math.max(reviewFrames.length, 1)] ?? [])
+    : (liveSnapshot.hand_pose_preview?.[focusedHand] ?? []);
   const promptHeadline = reviewClip
     ? "Review the recorded clip."
     : prompt?.prompt_text || "Loading prompt...";
@@ -339,10 +473,33 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                 />
               </label>
 
+              <label>
+                Dataset root
+                <input
+                  aria-label="Dataset root"
+                  value={datasetRoot}
+                  onChange={(event) => setDatasetRoot(event.target.value)}
+                  placeholder="Where DexForge should save sessions and clips"
+                />
+              </label>
+
               <button type="submit" className="primary-action">
                 Start session
               </button>
             </form>
+
+            {finishedSummary ? (
+              <section className="summary-panel">
+                <div className="panel-heading">
+                  <p className="section-label">Session Saved</p>
+                  <h1>Session saved and ready to close or start a new run.</h1>
+                </div>
+                <p className="summary-line">Dataset root: {finishedSummary.dataset_root}</p>
+                <p className="summary-line">Accepted clips: {finishedSummary.accepted_count}</p>
+                <p className="summary-line">Discarded clips: {finishedSummary.discarded_count}</p>
+                <p className="summary-line">Invalid clips: {finishedSummary.invalid_count}</p>
+              </section>
+            ) : null}
 
             <LaunchViewerPanel activeHands={activeHands} previews={liveSnapshot.hand_pose_preview} />
           </section>
@@ -354,24 +511,39 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                   <p className="section-label">Session</p>
                   <strong>{handModeLabel(session.active_hands)}</strong>
                 </div>
+                <label className="session-hand-mode">
+                  <span className="section-label">Active hands</span>
+                  <select
+                    aria-label="Active hands"
+                    value={session.active_hands}
+                    disabled={recording}
+                    onChange={(event) => handleActiveHandsChange(event.target.value)}
+                  >
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                    <option value="both">Both</option>
+                  </select>
+                </label>
                 {lastOutcome ? <div className="header-chip">{lastOutcome}</div> : null}
               </div>
 
               <div className="prompt-stage">
                 <p className="section-label">Prompt</p>
-                <h1 className="prompt-headline">{promptHeadline}</h1>
-                <p className="prompt-meta">
-                  {prompt ? `${prompt.category} / ${prompt.action} / ${prompt.variation}` : "No prompt"}
-                </p>
-                <p className="prompt-support">
-                  {reviewClip
-                    ? reviewClip.failure_reason
-                      ? `Failure reason: ${reviewClip.failure_reason}`
-                      : "Choose accept, discard, or retry."
-                    : recording
-                      ? "Recording in progress"
-                      : "Ready"}
-                </p>
+                <div className="prompt-copy">
+                  <h1 className="prompt-headline">{promptHeadline}</h1>
+                  <p className="prompt-meta">
+                    {prompt ? `${prompt.category} / ${prompt.action} / ${prompt.variation}` : "No prompt"}
+                  </p>
+                  <p className="prompt-support">
+                    {reviewClip
+                      ? reviewClip.failure_reason
+                        ? `Failure reason: ${reviewClip.failure_reason}`
+                        : "Choose accept, discard, or retry."
+                      : recording
+                        ? "Recording in progress"
+                        : "Ready"}
+                  </p>
+                </div>
 
                 <div className="action-deck">
                   {prompt && !recording && !reviewClip ? (
@@ -400,7 +572,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                     </>
                   ) : null}
 
-                  {!recording ? (
+                  {!recording && !reviewClip ? (
                     <button type="button" className="secondary-action" onClick={handleRefreshPrompt}>
                       Change prompt
                     </button>
@@ -422,6 +594,14 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                   Save note
                 </button>
               </div>
+
+              {!recording && !reviewClip ? (
+                <div className="session-actions">
+                  <button type="button" className="secondary-action" onClick={handleFinishSession}>
+                    Finish session
+                  </button>
+                </div>
+              ) : null}
             </section>
 
             <aside className="viewer-shell">

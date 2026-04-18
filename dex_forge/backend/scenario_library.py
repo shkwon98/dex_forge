@@ -22,6 +22,9 @@ class ScenarioLibrary:
     def all(self) -> list[Scenario]:
         return list(self._scenarios)
 
+    def supports(self, active_hands: HandMode, scenario: Scenario) -> bool:
+        return self._matches(active_hands, scenario.allowed_hands)
+
     def next_scenario(
         self,
         active_hands: HandMode,

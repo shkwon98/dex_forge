@@ -91,19 +91,25 @@ export function createStatusSource() {
 
 
 export const apiClient = {
-  createSession: async ({ operatorId = "", activeHands, notes }) =>
+  createSession: async ({ operatorId = "", activeHands, notes, datasetRoot = "" }) =>
     request("/api/sessions", {
       method: "POST",
       body: JSON.stringify({
         operator_id: operatorId,
         active_hands: activeHands,
         notes,
+        dataset_root: datasetRoot,
       }),
     }),
   getCurrentSession: async () =>
     request("/api/sessions/current"),
   getNextPrompt: async () =>
     request("/api/prompts/next", { method: "POST" }),
+  updateActiveHands: async (activeHands) =>
+    request("/api/sessions/active-hands", {
+      method: "POST",
+      body: JSON.stringify({ active_hands: activeHands }),
+    }),
   startClip: async () =>
     request("/api/clips/start", { method: "POST" }),
   stopClip: async () =>
@@ -112,6 +118,10 @@ export const apiClient = {
     request(`/api/clips/${clipId}/decision`, {
       method: "POST",
       body: JSON.stringify({ decision }),
+    }),
+  finishSession: async () =>
+    request("/api/sessions/finish", {
+      method: "POST",
     }),
   addNote: async (note) =>
     request("/api/events/note", {

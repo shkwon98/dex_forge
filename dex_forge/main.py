@@ -17,7 +17,7 @@ def build_service() -> CollectionService:
     scenario_library = ScenarioLibrary.from_path(
         package_root / "config" / "scenarios" / "default_scenarios.json"
     )
-    dataset_root = Path.cwd() / "dataset"
+    dataset_root = package_root.parents[3] / "dataset"
     return CollectionService(
         dataset_root=dataset_root,
         scenarios=scenario_library.all(),
