@@ -38,6 +38,9 @@ function createApi(overrides = {}) {
       notes,
       dataset_root: datasetRoot,
     }),
+    pickDatasetRoot: async () => ({
+      dataset_root: "/tmp/chosen-dataset",
+    }),
     getNextPrompt: async () => promptSequence[promptCalls++ % promptSequence.length],
     startClip: async () => ({ ok: true }),
     stopClip: async () => ({
@@ -64,9 +67,6 @@ function createApi(overrides = {}) {
       discarded_count: 0,
       retried_count: 0,
       invalid_count: 0,
-    }),
-    pickDatasetRoot: async () => ({
-      dataset_root: "/tmp/chosen-dataset",
     }),
     addNote: async () => ({ ok: true }),
     ...overrides,
@@ -110,6 +110,7 @@ test("creates a session and keeps the chosen hand mode visible for later clips",
   render(<App api={api} statusSource={statusSource} />);
 
   await user.selectOptions(screen.getByLabelText(/active hands/i), "right");
+  await user.click(screen.getByRole("button", { name: /choose folder/i }));
   await user.click(screen.getByRole("button", { name: /start session/i }));
 
   await screen.findByText(/do a precision pinch/i);
@@ -128,6 +129,7 @@ test("runs prompt, record, note, and review actions through the operator flow", 
 
   render(<App api={api} statusSource={statusSource} />);
 
+  await user.click(screen.getByRole("button", { name: /choose folder/i }));
   await user.click(screen.getByRole("button", { name: /start session/i }));
   await user.click(screen.getByRole("button", { name: /start recording/i }));
 
@@ -167,6 +169,7 @@ test("allows changing active hands during a session until recording starts", asy
 
   render(<App api={api} statusSource={statusSource} />);
 
+  await user.click(screen.getByRole("button", { name: /choose folder/i }));
   await user.click(screen.getByRole("button", { name: /start session/i }));
   await screen.findByText(/do a precision pinch/i);
 
@@ -195,6 +198,7 @@ test("shows a live hand stage and allows focused-hand switching for both-hand se
   render(<App api={api} statusSource={statusSource} />);
 
   await user.selectOptions(screen.getByLabelText(/active hands/i), "both");
+  await user.click(screen.getByRole("button", { name: /choose folder/i }));
   await user.click(screen.getByRole("button", { name: /start session/i }));
 
   await screen.findByText(/live hand/i);
@@ -217,6 +221,7 @@ test("starts a session without an operator field and immediately loads the first
 
   expect(screen.queryByLabelText(/operator/i)).not.toBeInTheDocument();
 
+  await user.click(screen.getByRole("button", { name: /choose folder/i }));
   await user.click(screen.getByRole("button", { name: /start session/i }));
 
   await screen.findByText(/do a precision pinch/i);
@@ -233,21 +238,30 @@ test("shows dataset root on launch and a finish-session summary screen", async (
 
   render(<App api={api} statusSource={statusSource} />);
 
-  await user.type(screen.getByLabelText(/dataset root/i), "/tmp/dataset");
+  await user.click(screen.getByRole("button", { name: /choose folder/i }));
   await user.click(screen.getByRole("button", { name: /start session/i }));
   await screen.findByText(/do a precision pinch/i);
 
   await user.click(screen.getByRole("button", { name: /finish session/i }));
 
-  expect(await screen.findByText(/dataset root: \/tmp\/dataset/i)).toBeInTheDocument();
+  expect(await screen.findByText(/dataset folder: \/tmp\/dataset/i)).toBeInTheDocument();
   expect(screen.getByText(/accepted clips: 1/i)).toBeInTheDocument();
 });
 
 
-test("fills dataset root from the native picker flow", async () => {
+test("fills dataset root from the native picker flow and uses the absolute path", async () => {
   const user = userEvent.setup();
-  const pickDatasetRoot = vi.fn(async () => ({ dataset_root: "/tmp/chosen-dataset" }));
-  const api = createApi({ pickDatasetRoot });
+  const pickDatasetRoot = vi.fn(async () => ({
+    dataset_root: "/tmp/chosen-dataset",
+  }));
+  const createSession = vi.fn(async ({ activeHands, notes, datasetRoot }) => ({
+    session_id: "session-1",
+    operator_id: "",
+    active_hands: activeHands,
+    notes,
+    dataset_root: datasetRoot,
+  }));
+  const api = createApi({ pickDatasetRoot, createSession });
   const statusSource = createStatusSource();
 
   render(<App api={api} statusSource={statusSource} />);
@@ -257,25 +271,57 @@ test("fills dataset root from the native picker flow", async () => {
   await waitFor(() => {
     expect(pickDatasetRoot).toHaveBeenCalled();
   });
-  expect(screen.getAllByText("/tmp/chosen-dataset").length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/\/tmp\/chosen-dataset/i).length).toBeGreaterThan(0);
+  expect(screen.getByRole("button", { name: /choose folder/i })).toHaveTextContent(/change folder/i);
+
+  await user.click(screen.getByRole("button", { name: /start session/i }));
+
+  await waitFor(() => {
+    expect(createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ datasetRoot: "/tmp/chosen-dataset" }),
+    );
+  });
 });
 
 
-test("shows and reuses recent dataset roots", async () => {
+test("only the folder action button opens the picker", async () => {
   const user = userEvent.setup();
-  window.localStorage.setItem(
-    "dexforge.recentDatasetRoots",
-    JSON.stringify(["/tmp/alpha", "/tmp/beta"]),
-  );
-  const api = createApi();
+  const pickDatasetRoot = vi.fn(async () => ({
+    dataset_root: "/tmp/chosen-dataset",
+  }));
+  const api = createApi({ pickDatasetRoot });
   const statusSource = createStatusSource();
 
   render(<App api={api} statusSource={statusSource} />);
 
-  expect(screen.getByRole("button", { name: "/tmp/alpha" })).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "/tmp/beta" }));
+  await user.click(screen.getByTestId("dataset-root-card"));
 
-  expect(screen.getAllByText("/tmp/beta").length).toBeGreaterThan(0);
+  expect(pickDatasetRoot).not.toHaveBeenCalled();
+
+  await user.click(screen.getByRole("button", { name: /choose folder/i }));
+
+  await waitFor(() => {
+    expect(pickDatasetRoot).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+test("ignores an aborted folder picker without showing an error", async () => {
+  const user = userEvent.setup();
+  const pickDatasetRoot = vi.fn(async () => ({
+    dataset_root: "",
+  }));
+  const api = createApi({ pickDatasetRoot });
+  const statusSource = createStatusSource();
+
+  render(<App api={api} statusSource={statusSource} />);
+
+  await user.click(screen.getByRole("button", { name: /choose folder/i }));
+
+  await waitFor(() => {
+    expect(pickDatasetRoot).toHaveBeenCalledTimes(1);
+  });
+  expect(screen.queryByText(/failed to choose a dataset directory/i)).not.toBeInTheDocument();
 });
 
 

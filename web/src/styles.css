@@ -84,6 +84,17 @@ textarea {
   font: 500 0.95rem/1.5 "Sora", sans-serif;
 }
 
+.field-group {
+  display: grid;
+  gap: 8px;
+}
+
+.field-label {
+  margin: 0;
+  color: var(--muted);
+  font: 500 0.95rem/1.5 "Sora", sans-serif;
+}
+
 .header-chip,
 .viewer-status {
   display: inline-flex;

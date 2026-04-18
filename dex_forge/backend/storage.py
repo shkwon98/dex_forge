@@ -13,8 +13,11 @@ class DatasetStorage:
         self.sessions_root.mkdir(parents=True, exist_ok=True)
 
     def write_scenario_version(self, version: str) -> None:
-        path = self.dataset_root / "scenario_library_version.json"
+        path = self.scenario_version_path()
         path.write_text(json.dumps({"version": version}, indent=2))
+
+    def scenario_version_path(self) -> Path:
+        return self.dataset_root / "scenario_library_version.json"
 
     def session_dir(self, session_id: str) -> Path:
         path = self.sessions_root / session_id
@@ -27,9 +30,12 @@ class DatasetStorage:
         return path
 
     def write_session_manifest(self, session: SessionRecord) -> Path:
-        path = self.session_dir(session.session_id) / "session_manifest.json"
+        path = self.session_manifest_path(session.session_id)
         path.write_text(json.dumps(session.model_dump(mode="json"), indent=2))
         return path
+
+    def session_manifest_path(self, session_id: str) -> Path:
+        return self.session_dir(session_id) / "session_manifest.json"
 
     def write_clip_manifest(self, clip: ClipRecord) -> Path:
         path = clip.clip_dir / "clip_manifest.json"

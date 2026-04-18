@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+import shutil
+import subprocess
 
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from fastapi import FastAPI, HTTPException, WebSocket
@@ -39,45 +41,83 @@ class AddNoteRequest(BaseModel):
     note: str
 
 
+def _pick_dataset_root_with_tkinter() -> str:
+    import tkinter as tk
+    from tkinter import filedialog
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    try:
+        return filedialog.askdirectory(
+            title="Select DexForge dataset root",
+            mustexist=False,
+        )
+    finally:
+        root.destroy()
+
+
 def pick_dataset_root() -> str:
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        try:
-            selected = filedialog.askdirectory(
-                title="Select DexForge dataset root",
-                mustexist=False,
-            )
-        finally:
-            root.destroy()
+        zenity = shutil.which("zenity")
+        if zenity:
+            try:
+                result = subprocess.run(
+                    [
+                        zenity,
+                        "--file-selection",
+                        "--directory",
+                        "--title=Select DexForge dataset root",
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode == 0:
+                    return result.stdout.strip()
+                if result.returncode == 1:
+                    return ""
+            except Exception:
+                pass
+        return _pick_dataset_root_with_tkinter()
     except Exception as error:
         raise RuntimeError("native directory picker unavailable") from error
-
-    return selected
 
 
 def resolve_web_dist(
     source_api_file: Path | None = None,
     package_share_dir: Path | None = None,
 ) -> Path:
+    def latest_mtime(dist_dir: Path) -> float:
+        return max(
+            (path.stat().st_mtime for path in dist_dir.rglob("*") if path.is_file()),
+            default=0.0,
+        )
+
     if package_share_dir is None:
         try:
             package_share_dir = Path(get_package_share_directory("dex_forge"))
         except PackageNotFoundError:
             package_share_dir = None
 
+    installed_dist = None
     if package_share_dir is not None:
         installed_dist = package_share_dir / "web" / "dist"
-        if installed_dist.joinpath("index.html").exists():
-            return installed_dist
 
     api_file = source_api_file or Path(__file__)
     source_dist = api_file.resolve().parents[2] / "web" / "dist"
-    if source_dist.joinpath("index.html").exists():
+    has_installed = installed_dist is not None and installed_dist.joinpath("index.html").exists()
+    has_source = source_dist.joinpath("index.html").exists()
+
+    if has_installed and has_source:
+        if latest_mtime(source_dist) >= latest_mtime(installed_dist):
+            return source_dist
+        return installed_dist
+
+    if has_installed:
+        return installed_dist
+
+    if has_source:
         return source_dist
 
     return source_dist

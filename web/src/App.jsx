@@ -4,8 +4,6 @@ import { apiClient, createStatusSource } from "./api";
 import { ThreeHandViewer } from "./ThreeHandViewer";
 import "./styles.css";
 
-const RECENT_DATASET_ROOTS_KEY = "dexforge.recentDatasetRoots";
-
 
 function handModeLabel(activeHands) {
   if (activeHands === "left") {
@@ -82,55 +80,11 @@ function FocusedHandToggle({ activeHands, focusedHand, onChange }) {
 }
 
 
-function loadRecentDatasetRoots() {
-  if (typeof window === "undefined") {
-    return [];
-  }
-
-  try {
-    const raw = window.localStorage.getItem(RECENT_DATASET_ROOTS_KEY);
-    if (!raw) {
-      return [];
-    }
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-
-function storeRecentDatasetRoots(roots) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(RECENT_DATASET_ROOTS_KEY, JSON.stringify(roots.slice(0, 5)));
-}
-
-
-function rememberDatasetRoot(currentRoots, nextRoot) {
-  if (!nextRoot) {
-    return currentRoots;
-  }
-
-  const normalized = nextRoot.trim();
-  if (!normalized) {
-    return currentRoots;
-  }
-
-  const next = [normalized, ...currentRoots.filter((root) => root !== normalized)].slice(0, 5);
-  storeRecentDatasetRoots(next);
-  return next;
-}
-
-
 export function App({ api = apiClient, statusSource: providedStatusSource }) {
   const [statusSource] = useState(() => providedStatusSource ?? createStatusSource());
   const [activeHands, setActiveHands] = useState("left");
   const [sessionNotes, setSessionNotes] = useState("");
   const [datasetRoot, setDatasetRoot] = useState("");
-  const [recentDatasetRoots, setRecentDatasetRoots] = useState(() => loadRecentDatasetRoots());
   const [session, setSession] = useState(null);
   const [prompt, setPrompt] = useState(null);
   const [recording, setRecording] = useState(false);
@@ -165,12 +119,6 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
   }, [activeHands, session?.active_hands]);
 
   useEffect(() => {
-    if (!session && !datasetRoot && liveSnapshot.dataset_root) {
-      setDatasetRoot(liveSnapshot.dataset_root);
-    }
-  }, [datasetRoot, liveSnapshot.dataset_root, session]);
-
-  useEffect(() => {
     setReviewFrameIndex(0);
   }, [focusedHand, reviewClip?.clip_id]);
 
@@ -191,14 +139,17 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
     event.preventDefault();
     setErrorMessage("");
     try {
+      if (!datasetRoot) {
+        throw new Error("Choose a dataset folder before starting the session.");
+      }
       const created = await api.createSession({
         activeHands,
         notes: sessionNotes,
         datasetRoot,
       });
-      setRecentDatasetRoots((current) => rememberDatasetRoot(current, datasetRoot));
       const firstPrompt = await api.getNextPrompt();
       setSession(created);
+      setDatasetRoot(created.dataset_root || datasetRoot);
       setPrompt(firstPrompt);
       setLastOutcome("");
       setReviewClip(null);
@@ -212,11 +163,11 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
   async function handleBrowseDatasetRoot() {
     setErrorMessage("");
     try {
-      const response = await api.pickDatasetRoot();
-      if (response.dataset_root) {
-        setDatasetRoot(response.dataset_root);
-        setRecentDatasetRoots((current) => rememberDatasetRoot(current, response.dataset_root));
+      const selection = await api.pickDatasetRoot();
+      if (!selection.dataset_root) {
+        return;
       }
+      setDatasetRoot(selection.dataset_root);
     } catch (error) {
       setErrorMessage(error.message || "Failed to choose a dataset directory.");
     }
@@ -326,6 +277,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
     try {
       const summary = await api.finishSession();
       setFinishedSummary(summary);
+      setDatasetRoot(summary.dataset_root || datasetRoot);
       setSession(null);
       setPrompt(null);
       setReviewClip(null);
@@ -344,7 +296,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
   const promptHeadline = reviewClip
     ? "Review the recorded clip."
     : prompt?.prompt_text || "Loading prompt...";
-  const datasetPathDescription = datasetRoot || liveSnapshot.dataset_root || "No dataset root selected";
+  const datasetPathDescription = datasetRoot || liveSnapshot.dataset_root || "No dataset folder selected";
 
   return (
     <div className="page-shell">
@@ -391,14 +343,16 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                 />
               </label>
 
-              <label>
-                Dataset root
-                <div className="dataset-root-card">
+              <div className="field-group">
+                <p className="field-label">Dataset root</p>
+                <div className="dataset-root-card" data-testid="dataset-root-card">
                   <div className="dataset-root-copy">
                     <p className="dataset-root-label">Current location</p>
                     <p className="dataset-root-path">{datasetPathDescription}</p>
                     <p className="dataset-root-hint">
-                      DexForge writes sessions, clips, manifests, and MCAP files here.
+                      {datasetRoot
+                        ? "DexForge will save session manifests, event logs, and MCAP recordings directly to this path."
+                        : "Choose a dataset folder before starting the session."}
                     </p>
                   </div>
                   <div className="dataset-root-actions">
@@ -408,29 +362,11 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                       className="secondary-action"
                       onClick={handleBrowseDatasetRoot}
                     >
-                      Choose folder
+                      {datasetRoot ? "Change folder" : "Choose folder"}
                     </button>
                   </div>
                 </div>
-              </label>
-
-              {recentDatasetRoots.length ? (
-                <div className="recent-roots">
-                  <p className="dataset-root-label">Recent locations</p>
-                  <div className="recent-root-list">
-                    {recentDatasetRoots.map((root) => (
-                      <button
-                        key={root}
-                        type="button"
-                        className={root === datasetRoot ? "recent-root-chip active" : "recent-root-chip"}
-                        onClick={() => setDatasetRoot(root)}
-                      >
-                        {root}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
+              </div>
 
               <button type="submit" className="primary-action">
                 Start session
@@ -443,7 +379,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                   <p className="section-label">Session Saved</p>
                   <h1>Session saved and ready to close or start a new run.</h1>
                 </div>
-                <p className="summary-line">Dataset root: {finishedSummary.dataset_root}</p>
+                <p className="summary-line">Dataset folder: {finishedSummary.dataset_root || datasetPathDescription}</p>
                 <p className="summary-line">Accepted clips: {finishedSummary.accepted_count}</p>
                 <p className="summary-line">Discarded clips: {finishedSummary.discarded_count}</p>
                 <p className="summary-line">Invalid clips: {finishedSummary.invalid_count}</p>
