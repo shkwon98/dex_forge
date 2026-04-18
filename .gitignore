@@ -12,4 +12,5 @@ node_modules/
 web/node_modules/
 web/dist/
 dataset/
-.superpowers/
+**/.superpowers/
+**/superpowers/

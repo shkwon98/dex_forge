@@ -1,50 +1,200 @@
 # DexForge
 
-DexForge is an operator-driven hand motion data collection system for ROS 2.
+DexForge is an operator-facing ROS 2 data collection system for building large-scale hand motion datasets.
 
-This project records labeled hand-motion clips from externally published Manus glove topics:
+It is designed for projects where hand articulation streams are already available from an external source such as a data glove, and the main requirement is to collect clean, labeled, reviewable motion clips through a fast local interface. DexForge combines a local web UI, a ROS 2 collection backend, structured dataset export, and a built-in dummy pose publisher for runtime validation without external hardware.
+
+## Highlights
+
+- Session-based collection for `left`, `right`, or `both` hands
+- Prompt-driven recording workflow with per-clip review
+- Structured export to `MCAP + manifest + event log`
+- Live hand-stage visualization in the web UI
+- Built-in dummy `PoseArray` publisher for local end-to-end testing
+
+## Table of Contents
+
+- [System Overview](#system-overview)
+- [Expected Input Topics](#expected-input-topics)
+- [Clone and Workspace Layout](#clone-and-workspace-layout)
+- [Quick Start](#quick-start)
+- [Local Runtime Test Without External Pose Nodes](#local-runtime-test-without-external-pose-nodes)
+- [Repository Structure](#repository-structure)
+- [Dataset Layout](#dataset-layout)
+- [API Summary](#api-summary)
+- [Scenario Library](#scenario-library)
+- [Development](#development)
+- [Citation](#citation)
+- [Acknowledgements](#acknowledgements)
+
+## System Overview
+
+DexForge runs as a single local service composed of:
+
+1. A ROS 2 subscriber node for hand pose topics
+2. A FastAPI backend for session, prompt, recording, and review control
+3. A React/Vite web UI served from the same backend process
+
+The intended collection loop is:
+
+1. Create a session with `left`, `right`, or `both` as the active hand mode
+2. Request the next suggested motion prompt
+3. Arm the prompt as the next clip label
+4. Start and stop recording manually
+5. Review the clip and `accept`, `discard`, or `retry`
+
+The backend writes raw clips as MCAP and stores metadata required for later dataset building and model training.
+
+## Expected Input Topics
+
+DexForge currently expects externally published hand articulation topics in the following format:
 
 - `/teleop/human/hand_left/pose` (`geometry_msgs/msg/PoseArray`)
 - `/teleop/human/hand_right/pose` (`geometry_msgs/msg/PoseArray`)
 
-It provides:
+If an external publisher is not available, DexForge can publish compatible dummy streams itself for local runtime testing.
 
-- a local web UI for operators
-- a ROS 2 backend that subscribes to hand pose topics
-- prompt/scenario suggestion from a curated scenario library
-- per-clip recording to `MCAP + manifest + event log`
+## Clone and Workspace Layout
 
-## Repository Layout
+DexForge is a ROS 2 package and should be placed inside the `src/` directory of a ROS 2 workspace.
+
+Example:
+
+```bash
+mkdir -p <your_ros2_ws>/src
+cd <your_ros2_ws>/src
+git clone https://github.com/shkwon98/dex_forge.git
+```
+
+Expected layout:
+
+```text
+<your_ros2_ws>/
+  src/
+    dex_forge/
+```
+
+## Quick Start
+
+### Requirements
+
+- Ubuntu with ROS 2 Jazzy installed
+- Python 3.12
+- Node.js / npm for the frontend build
+
+Python dependencies:
+
+- [`requirements.txt`](./requirements.txt)
+- [`requirements-dev.txt`](./requirements-dev.txt)
+
+### 1. Initial setup after clone
+
+Run:
+
+```bash
+./scripts/setup.sh
+```
+
+This script:
+
+- installs Python development dependencies
+- installs frontend dependencies in `web/`
+
+### 2. Build DexForge
+
+Run:
+
+```bash
+./scripts/build.sh
+```
+
+This script:
+
+- builds the frontend with Vite
+- builds the ROS 2 package with `colcon`
+
+### 3. Run DexForge
+
+Run:
+
+```bash
+./scripts/run_server.sh
+```
+
+Then open:
+
+```text
+http://localhost:8010
+```
+
+The backend serves the web app and collection APIs from the same port.
+
+## Local Runtime Test Without External Pose Nodes
+
+DexForge includes a built-in dummy ROS 2 pose publisher so the full stack can be tested without Manus gloves or any external pose source.
+
+Start the collection server in one terminal:
+
+```bash
+./scripts/run_server.sh
+```
+
+Start the dummy publisher in another terminal:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source <your_ros2_ws>/install/setup.bash
+cd <your_ros2_ws>
+ 
+ros2 run dex_forge dex_forge_dummy_pose_publisher --hand-mode both --publish-hz 15
+```
+
+If you are already in the repository root and your workspace has been built, the same command can be run directly as:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ../../install/setup.bash
+ros2 run dex_forge dex_forge_dummy_pose_publisher --hand-mode both --publish-hz 15
+```
+
+Supported hand modes:
+
+- `left`
+- `right`
+- `both`
+
+After both processes are running:
+
+1. Open `http://localhost:8010`
+2. Confirm that the live hand-stage viewer is updating
+3. Create a session
+4. Record and review a test clip
+
+For a quick backend-only check:
+
+```bash
+curl -s http://localhost:8010/api/sessions/current
+```
+
+The returned `hand_pose_preview.left` and `hand_pose_preview.right` fields should contain live points when the dummy publisher is active.
+
+## Repository Structure
 
 ```text
 dex_forge/
-  dex_forge/                    # Python package
-    backend/                    # collection service, API, ROS bridge, bag writer
-  config/scenarios/             # scenario library JSON
-  data_schema/                  # JSON schema files for manifests/events
+  dex_forge/
+    backend/                    # collection service, API, ROS bridge, storage logic
+    dummy_pose_publisher.py     # built-in test publisher for hand PoseArray topics
+    main.py                     # server entrypoint
+  config/scenarios/             # scenario library JSON files
+  data_schema/                  # JSON schema files for manifests and events
   tests/                        # backend tests
   web/                          # React/Vite operator UI
 ```
 
-## Runtime Overview
-
-The backend process does three things in one service:
-
-1. Runs an `rclpy` node that listens to the hand pose topics.
-2. Runs a FastAPI server on port `8010`.
-3. Serves the built web UI from `web/dist`.
-
-The main operator flow is:
-
-1. Create a session with `left`, `right`, or `both` as the active hand mode.
-2. Request the next prompt from the scenario library.
-3. Arm a clip for the selected prompt.
-4. Start and stop recording manually.
-5. Review the clip and `accept`, `discard`, or `retry`.
-
 ## Dataset Layout
 
-Recorded data is written under `./dataset` relative to the process working directory.
+Recorded data is written under `./dataset` relative to the working directory of the running process.
 
 ```text
 dataset/
@@ -59,67 +209,11 @@ dataset/
   scenario_library_version.json
 ```
 
-## Requirements
+Each accepted or reviewed clip includes:
 
-- Ubuntu with ROS 2 Jazzy installed
-- Python 3.12
-- Node.js / npm for the web UI build
-
-Python dependencies are listed in:
-
-- [requirements.txt](/home/shkwon98/ros2_ws/src/dex_forge/requirements.txt)
-- [requirements-dev.txt](/home/shkwon98/ros2_ws/src/dex_forge/requirements-dev.txt)
-
-## Setup
-
-Install Python dependencies:
-
-```bash
-cd /home/shkwon98/ros2_ws/src/dex_forge
-python3 -m pip install --user -r requirements-dev.txt
-```
-
-Install web dependencies:
-
-```bash
-cd /home/shkwon98/ros2_ws/src/dex_forge/web
-npm install
-```
-
-Build the web UI:
-
-```bash
-cd /home/shkwon98/ros2_ws/src/dex_forge/web
-npm run build
-```
-
-Build the ROS 2 package:
-
-```bash
-cd /home/shkwon98/ros2_ws
-source /opt/ros/jazzy/setup.bash
-colcon build --packages-select dex_forge --base-paths /home/shkwon98/ros2_ws/src
-source install/setup.bash
-```
-
-## Run
-
-After the package and frontend are built:
-
-```bash
-cd /home/shkwon98/ros2_ws
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-ros2 run dex_forge dex_forge_server
-```
-
-Then open:
-
-```text
-http://localhost:8010
-```
-
-The backend serves the built React app and exposes the API from the same port.
+- raw MCAP recording
+- structured clip metadata
+- ordered event log for prompt, record, and review actions
 
 ## API Summary
 
@@ -143,7 +237,7 @@ WebSocket:
 
 Default prompts live in:
 
-- [config/scenarios/default_scenarios.json](/home/shkwon98/ros2_ws/src/dex_forge/config/scenarios/default_scenarios.json)
+- [`config/scenarios/default_scenarios.json`](./config/scenarios/default_scenarios.json)
 
 Each scenario contains:
 
@@ -155,33 +249,62 @@ Each scenario contains:
 - `allowed_hands`
 - `tags`
 
-The selector filters by session hand mode and avoids recently repeated `category/action` pairs.
+Prompt selection is filtered by the current session hand mode and avoids recently repeated `category/action` pairs.
 
-## Tests
+## Development
 
-Backend tests:
+Run backend tests:
 
 ```bash
-cd /home/shkwon98/ros2_ws/src/dex_forge
+cd <your_ros2_ws>/src/dex_forge
 pytest tests -q
 ```
 
-Frontend tests:
+Run frontend tests:
 
 ```bash
-cd /home/shkwon98/ros2_ws/src/dex_forge/web
+cd <your_ros2_ws>/src/dex_forge/web
 npm test
 ```
 
-Frontend production build:
+Build the frontend:
 
 ```bash
-cd /home/shkwon98/ros2_ws/src/dex_forge/web
+cd <your_ros2_ws>/src/dex_forge/web
 npm run build
 ```
 
-## Current Notes
+Rebuild the ROS 2 package:
 
-- v1 stores raw clips for later normalization/training; MANO/OpenXR conversion is not implemented yet.
-- The backend writes MCAP files in-process with `rosbag2_py.SequentialWriter`.
-- The UI assumes a single local operator and does not implement authentication or multi-user coordination.
+```bash
+./scripts/build.sh
+```
+
+Available executables:
+
+```bash
+./scripts/run_server.sh
+
+# separate terminal
+source /opt/ros/jazzy/setup.bash
+source ../../install/setup.bash
+ros2 run dex_forge dex_forge_dummy_pose_publisher --hand-mode both --publish-hz 15
+```
+
+## Citation
+
+If DexForge is useful in your work, please cite the repository for now. A paper-specific citation can be added later when public release materials are available.
+
+```bibtex
+@misc{kwon2026dexforge,
+  title        = {DexForge: An Operator-Facing ROS 2 Data Collection System for Large-Scale Hand Motion Datasets},
+  author       = {Kwon, Sunghyun},
+  year         = {2026},
+  howpublished = {\url{https://github.com/shkwon98/dex_forge}},
+  note         = {GitHub repository}
+}
+```
+
+## Acknowledgements
+
+DexForge is being developed as a research-oriented data collection tool for dexterous hand motion capture, prompt-driven demonstration recording, and downstream dataset construction.

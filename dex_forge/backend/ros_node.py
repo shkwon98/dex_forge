@@ -4,6 +4,7 @@ from threading import Thread
 
 from geometry_msgs.msg import PoseArray
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 
 from .service import LEFT_TOPIC, RIGHT_TOPIC, CollectionService
@@ -37,4 +38,7 @@ class RosSpinThread(Thread):
         self._node = node
 
     def run(self) -> None:
-        rclpy.spin(self._node)
+        try:
+            rclpy.spin(self._node)
+        except (KeyboardInterrupt, ExternalShutdownException):
+            pass

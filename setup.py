@@ -59,6 +59,7 @@ setup(
     entry_points={
         "console_scripts": [
             "dex_forge_server = dex_forge.main:main",
+            "dex_forge_dummy_pose_publisher = dex_forge.dummy_pose_publisher:main",
         ],
     },
 )

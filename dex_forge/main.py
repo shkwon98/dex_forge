@@ -37,4 +37,6 @@ def main() -> None:
         uvicorn.run(app, host="0.0.0.0", port=8010)
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
+        ros_thread.join(timeout=2.0)
