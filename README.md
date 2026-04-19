@@ -1,6 +1,6 @@
 # DexForge
 
-DexForge is an operator-facing ROS 2 data collection system for building large-scale hand motion datasets.
+DexForge is an LLM-enhanced ROS 2 hand motion dataset builder.
 
 It is designed for projects where hand articulation streams are already available from an external source such as a data glove, and the main requirement is to collect clean, labeled, reviewable recordings through a fast local interface. DexForge combines a local web UI, a ROS 2 collection backend, structured dataset export, and a built-in dummy pose publisher for runtime validation without external hardware.
 
@@ -28,9 +28,7 @@ It is designed for projects where hand articulation streams are already availabl
   - [Local Runtime Test Without External Pose Nodes](#local-runtime-test-without-external-pose-nodes)
   - [Repository Structure](#repository-structure)
   - [Dataset Layout](#dataset-layout)
-  - [API Summary](#api-summary)
   - [Prompt Generation](#prompt-generation)
-  - [Development](#development)
   - [Citation](#citation)
   - [Acknowledgements](#acknowledgements)
 
@@ -218,24 +216,6 @@ pure SHA-256 hex digest of `prompt_text`, and `tasks.json` stores only `task_id`
 `prompt_text` for index lookups. Each recording directory is the rosbag output root and contains
 the generated `metadata.yaml` plus the MCAP file created by rosbag2.
 
-## API Summary
-
-HTTP endpoints:
-
-- `POST /api/collection/start`
-- `GET /api/collection`
-- `POST /api/collection/active-hands`
-- `POST /api/collection/finish`
-- `POST /api/prompts/next`
-- `POST /api/recordings/start`
-- `POST /api/recordings/stop`
-- `POST /api/recordings/{recording_id}/decision`
-- `POST /api/events/note`
-
-WebSocket:
-
-- `GET /ws/status`
-
 ## Prompt Generation
 
 DexForge now generates prompts from a local Ollama model on demand.
@@ -264,53 +244,13 @@ Ollama server should be available at `http://127.0.0.1:11434` and the backend us
 ./scripts/run_server.sh
 ```
 
-## Development
-
-Run backend tests:
-
-```bash
-cd <your_ros2_ws>/src/dex_forge
-pytest tests -q
-```
-
-Run frontend tests:
-
-```bash
-cd <your_ros2_ws>/src/dex_forge/web
-npm test
-```
-
-Build the frontend:
-
-```bash
-cd <your_ros2_ws>/src/dex_forge/web
-npm run build
-```
-
-Rebuild the ROS 2 package:
-
-```bash
-./scripts/build.sh
-```
-
-Available executables:
-
-```bash
-./scripts/run_server.sh
-
-# separate terminal
-source /opt/ros/jazzy/setup.bash
-source ../../install/setup.bash
-ros2 run dex_forge dex_forge_dummy_pose_publisher --hand-mode both --publish-hz 15
-```
-
 ## Citation
 
 If DexForge is useful in your work, please cite the repository for now. A paper-specific citation can be added later when public release materials are available.
 
 ```bibtex
 @misc{kwon2026dexforge,
-  title        = {DexForge: An Operator-Facing ROS 2 Data Collection System for Large-Scale Hand Motion Datasets},
+  title        = {DexForge: An LLM-Enhanced ROS 2 Hand Motion Dataset Builder},
   author       = {Kwon, Sunghyun},
   year         = {2026},
   howpublished = {\url{https://github.com/shkwon98/dex_forge}},
