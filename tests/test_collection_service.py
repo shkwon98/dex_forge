@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+import hashlib
 import json
 
 from geometry_msgs.msg import Point, Pose, PoseArray, Quaternion
@@ -46,7 +47,6 @@ def service(tmp_path):
     return CollectionService(
         dataset_root=tmp_path / "dataset",
         scenarios=scenarios,
-        scenario_version="test-v1",
         min_duration_sec=0.05,
         min_frames_per_topic=1,
     )
@@ -106,7 +106,6 @@ def test_next_prompt_cycles_through_all_eligible_scenarios_before_repeating(tmp_
     service = CollectionService(
         dataset_root=tmp_path / "dataset",
         scenarios=scenarios,
-        scenario_version="test-v1",
         min_duration_sec=0.05,
         min_frames_per_topic=1,
     )
@@ -153,10 +152,53 @@ def test_stop_writes_clip_outputs_and_mcap_for_left_hand(service):
     topics = sorted(read_bag_topics(str(clip.clip_dir / "recording.mcap")))
     assert topics == ["/collector/events", "/teleop/human/hand_left/pose"]
 
-    manifest = json.loads(clip.clip_dir.joinpath("clip_manifest.json").read_text())
+    manifest = json.loads(clip.clip_dir.joinpath("recording_manifest.json").read_text())
     assert manifest["status"] == "accepted"
     assert manifest["active_hands"] == "left"
     assert manifest["label"]["action"] == "precision"
+
+
+def test_same_prompt_accumulates_recordings_under_one_task_folder(service):
+    service.create_session(active_hands=HandMode.LEFT)
+    prompt = service.next_prompt()
+
+    first = service.start_clip(start_time=datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC))
+    service.record_message(
+        topic="/teleop/human/hand_left/pose",
+        message=make_pose_array(),
+        timestamp_ns=1_000_000,
+    )
+    first = service.stop_clip(stop_time=datetime(2026, 4, 16, 12, 0, 1, tzinfo=UTC))
+    service.decide_clip(first.clip_id, ClipDecision.ACCEPT)
+
+    service.next_prompt()
+    second = service.start_clip(start_time=datetime(2026, 4, 16, 12, 1, 0, tzinfo=UTC))
+    service.record_message(
+        topic="/teleop/human/hand_left/pose",
+        message=make_pose_array(),
+        timestamp_ns=2_000_000,
+    )
+    second = service.stop_clip(stop_time=datetime(2026, 4, 16, 12, 1, 1, tzinfo=UTC))
+
+    assert first.task_id == second.task_id
+    assert first.task_dir == second.task_dir
+    assert first.task_id == hashlib.sha256(prompt.prompt_text.encode("utf-8")).hexdigest()
+    assert first.task_dir.name == first.task_id
+    assert first.clip_dir.name == "recording_000001"
+    assert second.clip_dir.name == "recording_000002"
+
+    tasks_index = json.loads(service.storage.tasks_root.joinpath("tasks.json").read_text())
+    assert tasks_index == {
+        "tasks": [
+            {
+                "task_id": first.task_id,
+                "prompt_text": prompt.prompt_text,
+            }
+        ]
+    }
+    assert not first.clip_dir.joinpath("events.jsonl").exists()
+    assert not first.clip_dir.joinpath("recording_manifest.json").exists()
+    assert first.clip_dir.joinpath("metadata.yaml").exists()
 
 
 def test_stop_marks_clip_invalid_when_required_topic_has_no_frames(service):
@@ -304,7 +346,6 @@ def test_create_session_can_override_dataset_root(tmp_path):
     service = CollectionService(
         dataset_root=tmp_path / "dataset-a",
         scenarios=scenarios,
-        scenario_version="test-v1",
         min_duration_sec=0.05,
         min_frames_per_topic=1,
     )
@@ -315,7 +356,12 @@ def test_create_session_can_override_dataset_root(tmp_path):
     )
 
     assert service.storage.dataset_root == tmp_path / "dataset-b"
-    assert (tmp_path / "dataset-b" / "sessions" / session.session_id / "session_manifest.json").exists()
+    task_id = service.storage.task_id_for_prompt("Do a precision pinch.")
+    recording_dir = service.storage.recording_dir(task_id)
+    assert session.session_id
+    assert recording_dir == tmp_path / "dataset-b" / "tasks" / hashlib.sha256(
+        "Do a precision pinch.".encode("utf-8")
+    ).hexdigest() / "recording_000001"
 
 
 def test_finish_session_returns_summary_with_dataset_root(service):
