@@ -9,11 +9,20 @@ from uuid import uuid4
 from geometry_msgs.msg import PoseArray
 from std_msgs.msg import String
 
-from .models import CollectorSnapshot, EventRecord, HandMode, HandPosePoint, RecorderState, RecordingDecision, RecordingRecord, Scenario, TaskLabel
-from .scenario_library import ScenarioLibrary
+from .instruction_generator import OllamaInstructionGenerator
+from .models import (
+    CollectorSnapshot,
+    EventRecord,
+    HandMode,
+    HandPosePoint,
+    RecorderState,
+    RecordingDecision,
+    RecordingRecord,
+    Scenario,
+    TaskLabel,
+)
 from .storage import DatasetStorage
 from .writer import BufferedMessage, RosbagRecordingWriter
-
 
 LEFT_TOPIC = "/teleop/human/hand_left/pose"
 RIGHT_TOPIC = "/teleop/human/hand_right/pose"
@@ -28,13 +37,13 @@ class CollectionService:
     def __init__(
         self,
         dataset_root: Path,
-        scenarios: list[Scenario],
+        prompt_generator: OllamaInstructionGenerator,
         *,
         min_duration_sec: float = 0.25,
         min_frames_per_topic: int = 5,
     ):
         self.storage = DatasetStorage(Path(dataset_root))
-        self.scenario_library = ScenarioLibrary(scenarios=scenarios)
+        self.prompt_generator = prompt_generator
         self.writer = RosbagRecordingWriter()
         self.min_duration_sec = min_duration_sec
         self.min_frames_per_topic = min_frames_per_topic
@@ -59,7 +68,9 @@ class CollectionService:
         dataset_root: Path | str | None = None,
     ) -> CollectorSnapshot:
         if dataset_root:
-            self.storage = DatasetStorage(Path(dataset_root).expanduser().resolve())
+            self.storage = DatasetStorage(
+                Path(dataset_root).expanduser().resolve()
+            )
         self.collection_active_hands = active_hands
         self.current_state = RecorderState.IDLE
         self.current_prompt = None
@@ -73,100 +84,154 @@ class CollectionService:
     def update_active_hands(self, active_hands: HandMode) -> CollectorSnapshot:
         self._require_collection()
         if self.current_state is RecorderState.RECORDING:
-            raise InvalidTransitionError("active hands cannot change while recording")
+            raise InvalidTransitionError(
+                "active hands cannot change while recording"
+            )
 
         self.collection_active_hands = active_hands
         return self.snapshot()
 
     def next_prompt(self) -> Scenario:
-        active_hands = self._require_collection()
-        self.current_prompt = self.scenario_library.next_scenario(
-            active_hands=active_hands,
-            current_prompt_text=self.current_prompt.prompt_text if self.current_prompt else None,
-            recent_pairs=list(self.recent_pairs),
-        )
+        self._require_collection()
+        self.current_prompt = self.prompt_generator.generate_scenario()
         return self.current_prompt
 
-    def start_recording(self, start_time: datetime | None = None) -> RecordingRecord:
+    def start_recording(
+        self, start_time: datetime | None = None
+    ) -> RecordingRecord:
         if self.current_prompt is None:
-            raise InvalidTransitionError("prompt must be selected before recording starts")
+            raise InvalidTransitionError(
+                "prompt must be selected before recording starts"
+            )
 
-        self.current_recording = self._build_recording_record(self.current_prompt)
+        self.current_recording = self._build_recording_record(
+            self.current_prompt
+        )
         self.current_state = RecorderState.RECORDING
         self.current_recording.start_time = start_time or datetime.now(tz=UTC)
         self.buffered_messages = []
         self.pending_recording_events = []
-        self._append_event("record_pressed", {"recording_id": self.current_recording.recording_id})
+        self._append_event(
+            "record_pressed",
+            {"recording_id": self.current_recording.recording_id},
+        )
         return self.current_recording
 
-    def record_message(self, topic: str, message: Any, timestamp_ns: int) -> None:
+    def record_message(
+        self, topic: str, message: Any, timestamp_ns: int
+    ) -> None:
         preview_key = self._hand_key_for_topic(topic)
         if preview_key and isinstance(message, PoseArray):
-            self.hand_pose_preview[preview_key] = self._pose_array_preview(message)
+            self.hand_pose_preview[preview_key] = self._pose_array_preview(
+                message
+            )
 
-        if self.current_state is not RecorderState.RECORDING or self.current_recording is None:
+        if (
+            self.current_state is not RecorderState.RECORDING
+            or self.current_recording is None
+        ):
             return
         if topic in self._required_topics():
             self.buffered_messages.append(
-                BufferedMessage(topic=topic, message=message, timestamp_ns=timestamp_ns)
+                BufferedMessage(
+                    topic=topic, message=message, timestamp_ns=timestamp_ns
+                )
             )
-            self.current_recording.frame_counts[topic] = self.current_recording.frame_counts.get(topic, 0) + 1
+            self.current_recording.frame_counts[topic] = (
+                self.current_recording.frame_counts.get(topic, 0) + 1
+            )
         self.topic_health[topic] = {"last_timestamp_ns": timestamp_ns}
 
-    def stop_recording(self, stop_time: datetime | None = None) -> RecordingRecord:
-        if self.current_state is not RecorderState.RECORDING or self.current_recording is None:
-            raise InvalidTransitionError("recording must be active before it can stop")
+    def stop_recording(
+        self, stop_time: datetime | None = None
+    ) -> RecordingRecord:
+        if (
+            self.current_state is not RecorderState.RECORDING
+            or self.current_recording is None
+        ):
+            raise InvalidTransitionError(
+                "recording must be active before it can stop"
+            )
 
         recording = self.current_recording
         recording.end_time = stop_time or datetime.now(tz=UTC)
         recording.duration_sec = max(
-            (recording.end_time - recording.start_time).total_seconds() if recording.start_time else 0.0,
+            (
+                (recording.end_time - recording.start_time).total_seconds()
+                if recording.start_time
+                else 0.0
+            ),
             0.0,
         )
-        self._append_event("record_stopped", {"recording_id": recording.recording_id})
+        self._append_event(
+            "record_stopped", {"recording_id": recording.recording_id}
+        )
         recording.bag_path = str(recording.recording_dir)
 
         failure_reason = self._sanity_check(recording)
         if failure_reason:
             recording.status = RecorderState.INVALID
             recording.failure_reason = failure_reason
-            self._append_event("sanity_check_failed", {"reason": failure_reason})
+            self._append_event(
+                "sanity_check_failed", {"reason": failure_reason}
+            )
         else:
             recording.status = RecorderState.REVIEW
 
         bag_messages = self._build_bag_messages()
-        recording.recorded_topics = sorted({item.topic for item in bag_messages})
+        recording.recorded_topics = sorted(
+            {item.topic for item in bag_messages}
+        )
         recording.review_preview = self._build_review_preview()
         self.writer.write(Path(recording.bag_path), bag_messages)
-        self.storage.ensure_task_metadata(recording.task_id, recording.prompt_text, recording.label)
+        self.storage.ensure_task_metadata(
+            recording.task_id, recording.prompt_text, recording.label
+        )
         self.current_state = RecorderState.REVIEW
         return recording
 
-    def decide_recording(self, recording_id: str, decision: RecordingDecision) -> RecordingRecord:
-        if self.current_recording is None or self.current_recording.recording_id != recording_id:
+    def decide_recording(
+        self, recording_id: str, decision: RecordingDecision
+    ) -> RecordingRecord:
+        if (
+            self.current_recording is None
+            or self.current_recording.recording_id != recording_id
+        ):
             raise LookupError(f"unknown recording id {recording_id}")
 
         recording = self.current_recording
         if decision == RecordingDecision.DISCARD:
             recording.status = RecorderState.DISCARDED
             self.storage.remove_recording(recording.recording_dir)
-            self.storage.ensure_task_metadata(recording.task_id, recording.prompt_text, recording.label)
+            self.storage.ensure_task_metadata(
+                recording.task_id, recording.prompt_text, recording.label
+            )
             self.collection_outcomes.append(RecorderState.DISCARDED.value)
             self._reset_after_review()
             return recording
 
         if decision == RecordingDecision.RECORD_MORE:
             recording.status = RecorderState.ACCEPTED
-            self._append_event("review_record_more", {"recording_id": recording.recording_id})
+            self._append_event(
+                "review_record_more", {"recording_id": recording.recording_id}
+            )
         else:
             recording.status = RecorderState.ACCEPTED
-            self._append_event("review_accepted", {"recording_id": recording.recording_id})
+            self._append_event(
+                "review_accepted", {"recording_id": recording.recording_id}
+            )
 
         bag_messages = self._build_bag_messages()
-        recording.recorded_topics = sorted({item.topic for item in bag_messages})
+        recording.recorded_topics = sorted(
+            {item.topic for item in bag_messages}
+        )
         self.writer.write(Path(recording.bag_path), bag_messages)
-        self.storage.ensure_task_metadata(recording.task_id, recording.prompt_text, recording.label)
-        self.recent_pairs.append((recording.label.category, recording.label.action))
+        self.storage.ensure_task_metadata(
+            recording.task_id, recording.prompt_text, recording.label
+        )
+        self.recent_pairs.append(
+            (recording.label.category, recording.label.action)
+        )
         self.collection_outcomes.append(RecorderState.ACCEPTED.value)
         self._reset_after_review()
         return recording
@@ -182,7 +247,9 @@ class CollectionService:
             is_collecting=self.collection_active_hands is not None,
             active_hands=self.collection_active_hands,
             dataset_root=str(self.storage.dataset_root),
-            accepted_recording_count=self.collection_outcomes.count(RecorderState.ACCEPTED.value),
+            accepted_recording_count=self.collection_outcomes.count(
+                RecorderState.ACCEPTED.value
+            ),
             current_state=self.current_state,
             current_prompt=self.current_prompt,
             hand_pose_preview=self.hand_pose_preview,
@@ -192,15 +259,25 @@ class CollectionService:
     def finish_collection(self) -> dict[str, Any]:
         self._require_collection()
         if self.current_state is RecorderState.RECORDING:
-            raise InvalidTransitionError("collection cannot finish while recording")
+            raise InvalidTransitionError(
+                "collection cannot finish while recording"
+            )
         if self.current_state is RecorderState.REVIEW:
-            raise InvalidTransitionError("collection cannot finish while a recording is awaiting review")
+            raise InvalidTransitionError(
+                "collection cannot finish while a recording is awaiting review"
+            )
 
         summary = {
             "dataset_root": str(self.storage.dataset_root),
-            "accepted_count": self.collection_outcomes.count(RecorderState.ACCEPTED.value),
-            "discarded_count": self.collection_outcomes.count(RecorderState.DISCARDED.value),
-            "invalid_count": self.collection_outcomes.count(RecorderState.INVALID.value),
+            "accepted_count": self.collection_outcomes.count(
+                RecorderState.ACCEPTED.value
+            ),
+            "discarded_count": self.collection_outcomes.count(
+                RecorderState.DISCARDED.value
+            ),
+            "invalid_count": self.collection_outcomes.count(
+                RecorderState.INVALID.value
+            ),
             "total_recordings": len(self.collection_outcomes),
             "ended_at": datetime.now(tz=UTC).isoformat(),
         }
@@ -228,11 +305,16 @@ class CollectionService:
         return [*event_messages, *self.buffered_messages]
 
     def _build_review_preview(self) -> dict[str, list[list[HandPosePoint]]]:
-        preview: dict[str, list[list[HandPosePoint]]] = {"left": [], "right": []}
+        preview: dict[str, list[list[HandPosePoint]]] = {
+            "left": [],
+            "right": [],
+        }
         for item in self.buffered_messages:
             hand_key = self._hand_key_for_topic(item.topic)
             if hand_key and isinstance(item.message, PoseArray):
-                preview[hand_key].append(self._pose_array_preview(item.message))
+                preview[hand_key].append(
+                    self._pose_array_preview(item.message)
+                )
         return preview
 
     def _required_topics(self) -> list[str]:
@@ -267,12 +349,19 @@ class CollectionService:
         if recording.duration_sec < self.min_duration_sec:
             return "recording_too_short"
         for topic in self._required_topics():
-            if recording.frame_counts.get(topic, 0) < self.min_frames_per_topic:
+            if (
+                recording.frame_counts.get(topic, 0)
+                < self.min_frames_per_topic
+            ):
                 return "missing_required_topic_frames"
         return None
 
     def _append_event(self, event_type: str, payload: dict[str, Any]) -> None:
-        recording_id = self.current_recording.recording_id if self.current_recording else None
+        recording_id = (
+            self.current_recording.recording_id
+            if self.current_recording
+            else None
+        )
         self.pending_recording_events.append(
             EventRecord(
                 timestamp=datetime.now(tz=UTC),

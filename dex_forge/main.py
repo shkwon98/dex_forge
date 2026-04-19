@@ -7,14 +7,14 @@ import uvicorn
 from ament_index_python.packages import get_package_share_directory
 
 from dex_forge.backend.api import create_app
+from dex_forge.backend.instruction_generator import OllamaInstructionGenerator
 from dex_forge.backend.ros_node import HandCollectorNode, RosSpinThread
-from dex_forge.backend.scenario_library import ScenarioLibrary
 from dex_forge.backend.service import CollectionService
 
 
 def resolve_project_root() -> Path:
     candidate = Path(__file__).resolve().parents[1]
-    if candidate.joinpath("config", "scenarios", "default_scenarios.json").exists():
+    if candidate.joinpath("package.xml").exists():
         return candidate
     return Path(get_package_share_directory("dex_forge"))
 
@@ -23,13 +23,13 @@ def build_service() -> CollectionService:
     project_root = resolve_project_root()
     dataset_root = project_root / "dataset"
     dataset_root.mkdir(parents=True, exist_ok=True)
-    scenario_library = ScenarioLibrary.from_path(
-        project_root / "config" / "scenarios" / "default_scenarios.json"
+    generator = OllamaInstructionGenerator(
+        model="qwen2.5:7b",
     )
 
     return CollectionService(
         dataset_root=dataset_root,
-        scenarios=scenario_library.all(),
+        prompt_generator=generator,
     )
 
 

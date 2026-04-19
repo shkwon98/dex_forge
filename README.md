@@ -14,18 +14,25 @@ It is designed for projects where hand articulation streams are already availabl
 
 ## Table of Contents
 
-- [System Overview](#system-overview)
-- [Expected Input Topics](#expected-input-topics)
-- [Clone and Workspace Layout](#clone-and-workspace-layout)
-- [Quick Start](#quick-start)
-- [Local Runtime Test Without External Pose Nodes](#local-runtime-test-without-external-pose-nodes)
-- [Repository Structure](#repository-structure)
-- [Dataset Layout](#dataset-layout)
-- [API Summary](#api-summary)
-- [Scenario Library](#scenario-library)
-- [Development](#development)
-- [Citation](#citation)
-- [Acknowledgements](#acknowledgements)
+- [DexForge](#dexforge)
+  - [Highlights](#highlights)
+  - [Table of Contents](#table-of-contents)
+  - [System Overview](#system-overview)
+  - [Expected Input Topics](#expected-input-topics)
+  - [Clone and Workspace Layout](#clone-and-workspace-layout)
+  - [Quick Start](#quick-start)
+    - [Requirements](#requirements)
+    - [1. Initial setup after clone](#1-initial-setup-after-clone)
+    - [2. Build DexForge](#2-build-dexforge)
+    - [3. Run DexForge](#3-run-dexforge)
+  - [Local Runtime Test Without External Pose Nodes](#local-runtime-test-without-external-pose-nodes)
+  - [Repository Structure](#repository-structure)
+  - [Dataset Layout](#dataset-layout)
+  - [API Summary](#api-summary)
+  - [Prompt Generation](#prompt-generation)
+  - [Development](#development)
+  - [Citation](#citation)
+  - [Acknowledgements](#acknowledgements)
 
 ## System Overview
 
@@ -97,6 +104,7 @@ Run:
 This script:
 
 - installs Python development dependencies
+- installs Ollama automatically on Linux when missing
 - installs frontend dependencies in `web/`
 
 ### 2. Build DexForge
@@ -185,7 +193,7 @@ dex_forge/
     backend/                    # collection service, API, ROS bridge, storage logic
     dummy_pose_publisher.py     # built-in test publisher for hand PoseArray topics
     main.py                     # server entrypoint
-  config/scenarios/             # scenario library JSON files
+    instruction_generator.py    # on-demand Ollama prompt generation
   tests/                        # backend tests
   web/                          # React/Vite operator UI
 ```
@@ -228,20 +236,33 @@ WebSocket:
 
 - `GET /ws/status`
 
-## Scenario Library
+## Prompt Generation
 
-Default prompts live in:
+DexForge now generates prompts from a local Ollama model on demand.
+Each `POST /api/prompts/next` call triggers an immediate LLM request and returns a newly
+generated single-hand instruction.
 
-- [`config/scenarios/default_scenarios.json`](./config/scenarios/default_scenarios.json)
-
-Each scenario contains:
+Prompt metadata still contains:
 
 - `category`
 - `action`
 - `variation`
 - `prompt_text`
 
-Prompt selection avoids recently repeated `category/action` pairs. The default scenario set contains only single-hand prompts; there are no prompts that require both hands simultaneously.
+`action` is now the SHA-256 digest of `prompt_text` (no `task_000` style indexing).
+
+Ollama server should be available at `http://127.0.0.1:11434` and the backend uses
+`qwen2.5:7b` by default.
+
+`./scripts/run_server.sh` now performs preflight checks automatically:
+
+- verifies `ollama` CLI is installed
+- starts `ollama serve` in background if the daemon is not running
+- pulls `qwen2.5:7b` automatically if missing
+
+```bash
+./scripts/run_server.sh
+```
 
 ## Development
 
