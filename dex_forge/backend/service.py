@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import deque
 from datetime import UTC, datetime
-import json
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -51,7 +50,6 @@ class CollectionService:
         self.pending_clip_events: list[EventRecord] = []
         self.buffered_messages: list[BufferedMessage] = []
         self.recent_pairs: deque[tuple[str, str]] = deque(maxlen=8)
-        self.history: list[dict[str, Any]] = []
         self.topic_health: dict[str, Any] = {}
         self.hand_pose_preview: dict[str, list[HandPosePoint]] = {
             "left": [],
@@ -62,7 +60,6 @@ class CollectionService:
 
     def create_session(
         self,
-        operator_id: str,
         active_hands: HandMode,
         notes: str = "",
         dataset_root: Path | str | None = None,
@@ -74,7 +71,6 @@ class CollectionService:
         session_id = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S") + "_" + uuid4().hex[:6]
         self.session = SessionRecord(
             session_id=session_id,
-            operator_id=operator_id,
             active_hands=active_hands,
             started_at=datetime.now(tz=UTC),
             scenario_library_version=self.scenario_library.version,
@@ -120,10 +116,6 @@ class CollectionService:
             active_hands=session.active_hands,
             current_scenario_id=self.current_prompt.id if self.current_prompt else None,
             recent_pairs=list(self.recent_pairs),
-        )
-        self._record_session_event(
-            "prompt_loaded",
-            {"scenario_id": self.current_prompt.id, "prompt_text": self.current_prompt.prompt_text},
         )
         return self.current_prompt
 
@@ -199,7 +191,6 @@ class CollectionService:
         self.writer.write(Path(clip.bag_path), bag_messages)
         self.storage.write_events(clip.clip_dir, self.pending_clip_events)
         self.storage.write_clip_manifest(clip)
-        self._record_history(clip)
         return clip
 
     def decide_clip(self, clip_id: str, decision: ClipDecision) -> ClipRecord:
@@ -223,13 +214,11 @@ class CollectionService:
             self.current_clip = replacement
             self.current_state = RecorderState.ARMED
             self.storage.write_clip_manifest(clip)
-            self._record_history(clip)
             return replacement
 
         self.storage.write_events(clip.clip_dir, self.pending_clip_events)
         self.storage.write_clip_manifest(clip)
         self.recent_pairs.append((clip.label.category, clip.label.action))
-        self._record_history(clip)
         self.session_outcomes.append(clip.status.value)
         self.current_clip = None
         self.pending_clip_events = []
@@ -247,7 +236,6 @@ class CollectionService:
     def snapshot(self) -> SessionSnapshot:
         session_id = self.session.session_id if self.session else None
         active_hands = self.session.active_hands if self.session else None
-        clip_id = self.current_clip.clip_id if self.current_clip else None
         return SessionSnapshot(
             session_id=session_id,
             active_hands=active_hands,
@@ -255,10 +243,8 @@ class CollectionService:
             accepted_clip_count=self.session_outcomes.count(RecorderState.ACCEPTED.value),
             current_state=self.current_state,
             current_prompt=self.current_prompt,
-            current_clip_id=clip_id,
             hand_pose_preview=self.hand_pose_preview,
             topic_health=self.topic_health,
-            recent_history=self.history[-10:],
         )
 
     def finish_session(self) -> dict[str, Any]:
@@ -363,17 +349,6 @@ class CollectionService:
             )
         )
 
-    def _record_session_event(self, event_type: str, payload: dict[str, Any]) -> None:
-        session = self._require_session()
-        self.history.append(
-            {
-                "timestamp": datetime.now(tz=UTC).isoformat(),
-                "session_id": session.session_id,
-                "event_type": event_type,
-                "payload": payload,
-            }
-        )
-
     def _build_clip_record(self, scenario: Scenario) -> ClipRecord:
         session = self._require_session()
         clip_id = f"clip_{uuid4().hex[:8]}"
@@ -400,15 +375,6 @@ class CollectionService:
             ):
                 return scenario
         raise LookupError("scenario for clip not found")
-
-    def _record_history(self, clip: ClipRecord) -> None:
-        entry = {
-            "clip_id": clip.clip_id,
-            "status": clip.status.value,
-            "label": clip.label.model_dump(),
-        }
-        self.history = [item for item in self.history if item.get("clip_id") != clip.clip_id]
-        self.history.append(entry)
 
     def _require_session(self) -> SessionRecord:
         if self.session is None:

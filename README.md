@@ -222,12 +222,10 @@ HTTP endpoints:
 - `POST /api/sessions`
 - `GET /api/sessions/current`
 - `POST /api/prompts/next`
-- `POST /api/clips/arm`
 - `POST /api/clips/start`
 - `POST /api/clips/stop`
 - `POST /api/clips/{clip_id}/decision`
 - `POST /api/events/note`
-- `GET /api/history`
 
 WebSocket:
 

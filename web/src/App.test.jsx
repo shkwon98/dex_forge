@@ -31,9 +31,8 @@ function createApi(overrides = {}) {
     },
   ];
   return {
-    createSession: async ({ operatorId, activeHands, notes, datasetRoot }) => ({
+    createSession: async ({ activeHands, notes, datasetRoot }) => ({
       session_id: "session-1",
-      operator_id: operatorId,
       active_hands: activeHands,
       notes,
       dataset_root: datasetRoot,
@@ -215,25 +214,6 @@ test("shows a live hand stage and allows focused-hand switching for both-hand se
 });
 
 
-test("starts a session without an operator field and immediately loads the first prompt", async () => {
-  const user = userEvent.setup();
-  const api = createApi();
-  const statusSource = createStatusSource();
-
-  render(<App api={api} statusSource={statusSource} />);
-
-  expect(screen.queryByLabelText(/operator/i)).not.toBeInTheDocument();
-
-  await user.click(screen.getByRole("button", { name: /choose folder/i }));
-  await user.click(screen.getByRole("button", { name: /start session/i }));
-
-  await screen.findByText(/do a precision pinch/i);
-  expect(screen.queryByRole("button", { name: /arm clip/i })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /change prompt/i })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /start recording/i })).toBeInTheDocument();
-});
-
-
 test("shows dataset root on launch and a finish-session summary screen", async () => {
   const user = userEvent.setup();
   const api = createApi();
@@ -259,7 +239,6 @@ test("fills dataset root from the native picker flow and uses the absolute path"
   }));
   const createSession = vi.fn(async ({ activeHands, notes, datasetRoot }) => ({
     session_id: "session-1",
-    operator_id: "",
     active_hands: activeHands,
     notes,
     dataset_root: datasetRoot,
@@ -284,6 +263,34 @@ test("fills dataset root from the native picker flow and uses the absolute path"
       expect.objectContaining({ datasetRoot: "/tmp/chosen-dataset" }),
     );
   });
+});
+
+
+test("can start a session using the dataset root already present in the live snapshot", async () => {
+  const user = userEvent.setup();
+  const createSession = vi.fn(async ({ activeHands, notes, datasetRoot }) => ({
+    session_id: "session-1",
+    active_hands: activeHands,
+    notes,
+    dataset_root: datasetRoot,
+  }));
+  const api = createApi({ createSession });
+  const statusSource = createStatusSource({
+    dataset_root: "/tmp/preselected-dataset",
+  });
+
+  render(<App api={api} statusSource={statusSource} />);
+
+  expect(screen.getByText(/\/tmp\/preselected-dataset/i)).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /start session/i }));
+
+  await waitFor(() => {
+    expect(createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ datasetRoot: "/tmp/preselected-dataset" }),
+    );
+  });
+  expect(screen.queryByText(/choose a dataset folder before starting the session/i)).not.toBeInTheDocument();
 });
 
 

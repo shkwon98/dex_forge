@@ -54,7 +54,6 @@ class ClipLabel(BaseModel):
 
 class SessionRecord(BaseModel):
     session_id: str
-    operator_id: str
     active_hands: HandMode
     started_at: datetime
     ended_at: datetime | None = None
@@ -127,7 +126,5 @@ class SessionSnapshot(BaseModel):
     accepted_clip_count: int = 0
     current_state: RecorderState
     current_prompt: Scenario | None
-    current_clip_id: str | None
     hand_pose_preview: dict[str, list[HandPosePoint]] = Field(default_factory=dict)
     topic_health: dict[str, Any] = Field(default_factory=dict)
-    recent_history: list[dict[str, Any]] = Field(default_factory=list)

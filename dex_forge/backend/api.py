@@ -18,7 +18,6 @@ from .service import CollectionService
 
 
 class CreateSessionRequest(BaseModel):
-    operator_id: str = ""
     active_hands: HandMode
     notes: str = ""
     dataset_root: str = ""
@@ -27,10 +26,6 @@ class CreateSessionRequest(BaseModel):
 
 class UpdateActiveHandsRequest(BaseModel):
     active_hands: HandMode
-
-
-class ArmClipRequest(BaseModel):
-    scenario_id: str
 
 
 class DecideClipRequest(BaseModel):
@@ -144,7 +139,6 @@ def create_app(
     @app.post("/api/sessions")
     def create_session(request: CreateSessionRequest):
         return service.create_session(
-            operator_id=request.operator_id,
             active_hands=request.active_hands,
             notes=request.notes,
             dataset_root=request.dataset_root or None,
@@ -166,10 +160,6 @@ def create_app(
     @app.post("/api/prompts/next")
     def next_prompt():
         return service.next_prompt()
-
-    @app.post("/api/clips/arm")
-    def arm_clip(request: ArmClipRequest):
-        return service.arm_clip(request.scenario_id)
 
     @app.post("/api/clips/start")
     def start_clip():
@@ -194,10 +184,6 @@ def create_app(
             return {"dataset_root": dataset_root_picker()}
         except RuntimeError as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
-
-    @app.get("/api/history")
-    def history():
-        return service.snapshot().recent_history
 
     @app.websocket("/ws/status")
     async def status(websocket: WebSocket):

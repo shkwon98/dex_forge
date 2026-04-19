@@ -91,11 +91,10 @@ export function createStatusSource() {
 
 
 export const apiClient = {
-  createSession: async ({ operatorId = "", activeHands, notes, datasetRoot = "" }) =>
+  createSession: async ({ activeHands, notes, datasetRoot = "" }) =>
     request("/api/sessions", {
       method: "POST",
       body: JSON.stringify({
-        operator_id: operatorId,
         active_hands: activeHands,
         notes,
         dataset_root: datasetRoot,

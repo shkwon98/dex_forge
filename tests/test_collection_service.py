@@ -53,14 +53,14 @@ def service(tmp_path):
 
 
 def test_start_requires_armed_clip(service):
-    service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+    service.create_session(active_hands=HandMode.LEFT)
 
     with pytest.raises(InvalidTransitionError):
         service.start_clip()
 
 
 def test_start_uses_current_prompt_without_explicit_arm(service):
-    service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+    service.create_session(active_hands=HandMode.LEFT)
     prompt = service.next_prompt()
 
     clip = service.start_clip(start_time=datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC))
@@ -68,44 +68,6 @@ def test_start_uses_current_prompt_without_explicit_arm(service):
     assert clip.prompt_text == prompt.prompt_text
     assert clip.label.action == prompt.action
     assert service.current_state == RecorderState.RECORDING
-
-
-def test_next_prompt_rotates_to_a_different_scenario_before_repeating(tmp_path):
-    scenarios = [
-        Scenario(
-            id="prompt-a",
-            category="grasp",
-            action="power",
-            variation="a",
-            prompt_text="Prompt A",
-            difficulty="easy",
-            allowed_hands="either",
-            tags=[],
-        ),
-        Scenario(
-            id="prompt-b",
-            category="pinch",
-            action="precision",
-            variation="b",
-            prompt_text="Prompt B",
-            difficulty="easy",
-            allowed_hands="either",
-            tags=[],
-        ),
-    ]
-    service = CollectionService(
-        dataset_root=tmp_path / "dataset",
-        scenarios=scenarios,
-        scenario_version="test-v1",
-        min_duration_sec=0.05,
-        min_frames_per_topic=1,
-    )
-    service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
-
-    first = service.next_prompt()
-    second = service.next_prompt()
-
-    assert second.id != first.id
 
 
 def test_next_prompt_cycles_through_all_eligible_scenarios_before_repeating(tmp_path):
@@ -148,7 +110,7 @@ def test_next_prompt_cycles_through_all_eligible_scenarios_before_repeating(tmp_
         min_duration_sec=0.05,
         min_frames_per_topic=1,
     )
-    service.create_session(operator_id="operator", active_hands=HandMode.BOTH)
+    service.create_session(active_hands=HandMode.BOTH)
 
     seen = [service.next_prompt().id for _ in range(3)]
     repeated = service.next_prompt().id
@@ -158,7 +120,7 @@ def test_next_prompt_cycles_through_all_eligible_scenarios_before_repeating(tmp_
 
 
 def test_stop_writes_clip_outputs_and_mcap_for_left_hand(service):
-    service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+    service.create_session(active_hands=HandMode.LEFT)
     prompt = service.next_prompt()
     service.arm_clip(prompt.id)
 
@@ -198,7 +160,7 @@ def test_stop_writes_clip_outputs_and_mcap_for_left_hand(service):
 
 
 def test_stop_marks_clip_invalid_when_required_topic_has_no_frames(service):
-    service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+    service.create_session(active_hands=HandMode.LEFT)
     prompt = service.next_prompt()
     service.arm_clip(prompt.id)
     service.start_clip(start_time=datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC))
@@ -210,7 +172,7 @@ def test_stop_marks_clip_invalid_when_required_topic_has_no_frames(service):
 
 
 def test_retry_preserves_original_clip_and_arms_replacement(service):
-    service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+    service.create_session(active_hands=HandMode.LEFT)
     prompt = service.next_prompt()
     service.arm_clip(prompt.id)
     service.start_clip(start_time=datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC))
@@ -230,7 +192,7 @@ def test_retry_preserves_original_clip_and_arms_replacement(service):
 
 
 def test_accept_clears_clip_state_and_allows_followup_recording(service):
-    service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+    service.create_session(active_hands=HandMode.LEFT)
     service.next_prompt()
     service.start_clip(start_time=datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC))
     service.record_message(
@@ -252,7 +214,7 @@ def test_accept_clears_clip_state_and_allows_followup_recording(service):
 
 
 def test_can_change_hand_mode_outside_recording(service):
-    service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+    service.create_session(active_hands=HandMode.LEFT)
     service.next_prompt()
 
     service.update_active_hands(HandMode.RIGHT)
@@ -261,7 +223,7 @@ def test_can_change_hand_mode_outside_recording(service):
 
 
 def test_snapshot_includes_total_accepted_clip_count(service):
-    service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+    service.create_session(active_hands=HandMode.LEFT)
     service.next_prompt()
     service.start_clip(start_time=datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC))
     service.record_message(
@@ -278,7 +240,7 @@ def test_snapshot_includes_total_accepted_clip_count(service):
 
 
 def test_cannot_change_hand_mode_while_recording(service):
-    service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+    service.create_session(active_hands=HandMode.LEFT)
     service.next_prompt()
     service.start_clip(start_time=datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC))
 
@@ -287,7 +249,7 @@ def test_cannot_change_hand_mode_while_recording(service):
 
 
 def test_add_note_is_written_to_event_log(service):
-    service.create_session(operator_id="operator", active_hands=HandMode.RIGHT)
+    service.create_session(active_hands=HandMode.RIGHT)
     prompt = service.next_prompt()
     service.arm_clip(prompt.id)
     service.start_clip(start_time=datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC))
@@ -308,7 +270,7 @@ def test_add_note_is_written_to_event_log(service):
 
 
 def test_snapshot_includes_live_hand_pose_preview_outside_recording(service):
-    service.create_session(operator_id="operator", active_hands=HandMode.BOTH)
+    service.create_session(active_hands=HandMode.BOTH)
     service.record_message(
         topic="/teleop/human/hand_left/pose",
         message=make_pose_array("left_preview"),
@@ -348,7 +310,6 @@ def test_create_session_can_override_dataset_root(tmp_path):
     )
 
     session = service.create_session(
-        operator_id="operator",
         active_hands=HandMode.LEFT,
         dataset_root=tmp_path / "dataset-b",
     )
@@ -358,7 +319,7 @@ def test_create_session_can_override_dataset_root(tmp_path):
 
 
 def test_finish_session_returns_summary_with_dataset_root(service):
-    session = service.create_session(operator_id="operator", active_hands=HandMode.LEFT)
+    session = service.create_session(active_hands=HandMode.LEFT)
     service.next_prompt()
     service.start_clip(start_time=datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC))
     service.record_message(

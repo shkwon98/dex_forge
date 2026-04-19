@@ -100,7 +100,6 @@ def test_api_supports_session_creation_and_prompt_flow(tmp_path):
     create_response = client.post(
         "/api/sessions",
         json={
-            "operator_id": "operator",
             "active_hands": HandMode.LEFT.value,
             "notes": "test run",
         },

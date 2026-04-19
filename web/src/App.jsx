@@ -135,21 +135,23 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
     return () => window.clearInterval(intervalId);
   }, [focusedHand, reviewClip]);
 
+  const effectiveDatasetRoot = datasetRoot || liveSnapshot.dataset_root || "";
+
   async function handleStartSession(event) {
     event.preventDefault();
     setErrorMessage("");
     try {
-      if (!datasetRoot) {
+      if (!effectiveDatasetRoot) {
         throw new Error("Choose a dataset folder before starting the session.");
       }
       const created = await api.createSession({
         activeHands,
         notes: sessionNotes,
-        datasetRoot,
+        datasetRoot: effectiveDatasetRoot,
       });
       const firstPrompt = await api.getNextPrompt();
       setSession(created);
-      setDatasetRoot(created.dataset_root || datasetRoot);
+      setDatasetRoot(created.dataset_root || effectiveDatasetRoot);
       setPrompt(firstPrompt);
       setReviewClip(null);
       setFinishedSummary(null);
@@ -290,7 +292,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
   const promptHeadline = reviewClip
     ? "Review the recorded clip."
     : prompt?.prompt_text || "Loading prompt...";
-  const datasetPathDescription = datasetRoot || liveSnapshot.dataset_root || "No dataset folder selected";
+  const datasetPathDescription = effectiveDatasetRoot || "No dataset folder selected";
   const acceptedClipCount = liveSnapshot.accepted_clip_count ?? 0;
 
   return (
@@ -345,7 +347,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                     <p className="dataset-root-label">Current location</p>
                     <p className="dataset-root-path">{datasetPathDescription}</p>
                     <p className="dataset-root-hint">
-                      {datasetRoot
+                      {effectiveDatasetRoot
                         ? "DexForge will save session manifests, event logs, and MCAP recordings directly to this path."
                         : "Choose a dataset folder before starting the session."}
                     </p>
@@ -357,7 +359,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                       className="secondary-action"
                       onClick={handleBrowseDatasetRoot}
                     >
-                      {datasetRoot ? "Change folder" : "Choose folder"}
+                      {effectiveDatasetRoot ? "Change folder" : "Choose folder"}
                     </button>
                   </div>
                 </div>

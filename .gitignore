@@ -11,6 +11,7 @@ log/
 node_modules/
 web/node_modules/
 web/dist/
-dataset/
+/dataset/
+/web/dataset/
 **/.superpowers/
 **/superpowers/

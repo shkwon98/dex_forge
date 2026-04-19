@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ament_index_python.packages import get_package_share_directory
 import rclpy
 import uvicorn
+from ament_index_python.packages import get_package_share_directory
 
 from dex_forge.backend.api import create_app
 from dex_forge.backend.ros_node import HandCollectorNode, RosSpinThread
@@ -14,10 +14,13 @@ from dex_forge.backend.service import CollectionService
 
 def build_service() -> CollectionService:
     package_root = Path(get_package_share_directory("dex_forge"))
+    dataset_root = package_root / "dataset"
+    if not dataset_root.exists():
+        dataset_root.mkdir(parents=True)
     scenario_library = ScenarioLibrary.from_path(
         package_root / "config" / "scenarios" / "default_scenarios.json"
     )
-    dataset_root = package_root.parents[3] / "dataset"
+
     return CollectionService(
         dataset_root=dataset_root,
         scenarios=scenario_library.all(),
