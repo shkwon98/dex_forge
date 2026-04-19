@@ -201,14 +201,12 @@ def test_same_prompt_accumulates_recordings_under_one_task_folder(service):
     assert second_clip.clip_dir.name == "recording_000002"
 
     tasks_index = json.loads(service.storage.tasks_root.joinpath("tasks.json").read_text())
-    assert tasks_index == {
-        "tasks": [
-            {
-                "task_id": first_clip.task_id,
-                "prompt_text": prompt.prompt_text,
-            }
-        ]
-    }
+    assert tasks_index == [
+        {
+            "task_id": first_clip.task_id,
+            "prompt_text": prompt.prompt_text,
+        }
+    ]
     assert not first_clip.clip_dir.joinpath("events.jsonl").exists()
     assert not first_clip.clip_dir.joinpath("recording_manifest.json").exists()
     assert first_clip.clip_dir.joinpath("metadata.yaml").exists()

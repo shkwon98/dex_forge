@@ -55,16 +55,15 @@ class DatasetStorage:
     def _write_task_index(self, task_id: str, prompt_text: str) -> None:
         path = self.tasks_root / "tasks.json"
         if path.exists():
-            payload = json.loads(path.read_text())
+            entries = json.loads(path.read_text())
         else:
-            payload = {"tasks": []}
+            entries = []
 
-        entries = [entry for entry in payload["tasks"] if entry.get("task_id") != task_id]
+        entries = [entry for entry in entries if entry.get("task_id") != task_id]
         entries.append(
             {
                 "task_id": task_id,
                 "prompt_text": prompt_text,
             }
         )
-        payload["tasks"] = sorted(entries, key=lambda entry: entry["task_id"])
-        path.write_text(json.dumps(payload, indent=2))
+        path.write_text(json.dumps(sorted(entries, key=lambda entry: entry["task_id"]), indent=2))
