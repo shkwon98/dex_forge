@@ -19,7 +19,6 @@ from .models import (
     RecordingDecision,
     RecordingRecord,
     Scenario,
-    TaskLabel,
 )
 from .storage import DatasetStorage
 from .writer import BufferedMessage, RosbagRecordingWriter
@@ -184,9 +183,7 @@ class CollectionService:
         )
         recording.review_preview = self._build_review_preview()
         self.writer.write(Path(recording.bag_path), bag_messages)
-        self.storage.ensure_task_metadata(
-            recording.task_id, recording.prompt_text, recording.label
-        )
+        self.storage.ensure_task_metadata(recording.task_id, recording.prompt_text)
         self.current_state = RecorderState.REVIEW
         return recording
 
@@ -203,9 +200,7 @@ class CollectionService:
         if decision == RecordingDecision.DISCARD:
             recording.status = RecorderState.DISCARDED
             self.storage.remove_recording(recording.recording_dir)
-            self.storage.ensure_task_metadata(
-                recording.task_id, recording.prompt_text, recording.label
-            )
+            self.storage.ensure_task_metadata(recording.task_id, recording.prompt_text)
             self.collection_outcomes.append(RecorderState.DISCARDED.value)
             self._reset_after_review()
             return recording
@@ -226,12 +221,8 @@ class CollectionService:
             {item.topic for item in bag_messages}
         )
         self.writer.write(Path(recording.bag_path), bag_messages)
-        self.storage.ensure_task_metadata(
-            recording.task_id, recording.prompt_text, recording.label
-        )
-        self.recent_pairs.append(
-            (recording.label.category, recording.label.action)
-        )
+        self.storage.ensure_task_metadata(recording.task_id, recording.prompt_text)
+        self.recent_pairs.append((self.current_prompt.category, self.current_prompt.action))
         self.collection_outcomes.append(RecorderState.ACCEPTED.value)
         self._reset_after_review()
         return recording
@@ -374,18 +365,12 @@ class CollectionService:
     def _build_recording_record(self, scenario: Scenario) -> RecordingRecord:
         active_hands = self._require_collection()
         recording_id = f"recording_{uuid4().hex[:8]}"
-        label = TaskLabel(
-            category=scenario.category,
-            action=scenario.action,
-            variation=scenario.variation,
-        )
         task_id = self.storage.task_id_for_prompt(scenario.prompt_text)
         recording_dir = self.storage.recording_dir(task_id)
-        self.storage.ensure_task_metadata(task_id, scenario.prompt_text, label)
+        self.storage.ensure_task_metadata(task_id, scenario.prompt_text)
         return RecordingRecord(
             recording_id=recording_id,
             task_id=task_id,
-            label=label,
             prompt_text=scenario.prompt_text,
             active_hands=active_hands,
             status=RecorderState.RECORDING,

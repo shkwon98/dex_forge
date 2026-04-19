@@ -5,8 +5,6 @@ import json
 from pathlib import Path
 import shutil
 
-from .models import TaskLabel
-
 
 class DatasetStorage:
     def __init__(self, dataset_root: Path):
@@ -34,7 +32,7 @@ class DatasetStorage:
         next_index = (existing_indices[-1] + 1) if existing_indices else 1
         return task_dir / f"recording_{next_index:06d}"
 
-    def ensure_task_metadata(self, task_id: str, prompt_text: str, label: TaskLabel) -> Path:
+    def ensure_task_metadata(self, task_id: str, prompt_text: str) -> Path:
         task_dir = self.task_dir(task_id)
         self._write_tasks_index(task_id, prompt_text)
 
@@ -43,14 +41,11 @@ class DatasetStorage:
             existing_payload = json.loads(path.read_text())
             if existing_payload.get("prompt_text") != prompt_text:
                 raise ValueError("task metadata prompt text mismatch")
-            if existing_payload.get("label") != label.model_dump():
-                raise ValueError("task metadata label mismatch for identical prompt")
 
         recording_count = self.recording_count(task_id)
         payload = {
             "task_id": task_id,
             "prompt_text": prompt_text,
-            "label": label.model_dump(),
             "recording_count": recording_count,
         }
         path.write_text(json.dumps(payload, indent=2))

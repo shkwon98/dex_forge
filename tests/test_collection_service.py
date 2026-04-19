@@ -95,7 +95,6 @@ def test_start_recording_uses_current_prompt(service):
     )
 
     assert recording.prompt_text == prompt.prompt_text
-    assert recording.label.action == prompt.action
     assert service.current_state == RecorderState.RECORDING
 
 
@@ -376,7 +375,7 @@ def test_recording_dir_uses_next_highest_suffix_when_gaps_exist(service):
     assert recording_dir.name == "recording_000003"
 
 
-def test_same_prompt_with_conflicting_label_raises_error(tmp_path):
+def test_same_prompt_with_different_metadata_still_reuses_same_task(tmp_path):
     scenarios = [
         Scenario(
             category="grasp",
@@ -406,10 +405,13 @@ def test_same_prompt_with_conflicting_label_raises_error(tmp_path):
     service.current_recording = None
 
     service.current_prompt = scenarios[1]
-    with pytest.raises(ValueError, match="task metadata label mismatch"):
-        service.start_recording(
-            start_time=datetime(2026, 4, 16, 12, 1, 0, tzinfo=UTC)
-        )
+    second_recording = service.start_recording(
+        start_time=datetime(2026, 4, 16, 12, 1, 0, tzinfo=UTC)
+    )
+
+    assert second_recording.task_id == service.storage.task_id_for_prompt(
+        "Shared prompt"
+    )
 
 
 def test_snapshot_includes_live_hand_pose_preview_outside_recording(service):

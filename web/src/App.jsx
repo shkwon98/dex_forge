@@ -309,7 +309,6 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
             <p className="app-title">DexForge</p>
             <p className="app-caption">Hand motion data collection</p>
           </div>
-          <div className="header-chip">{handModeLabel(currentMode)}</div>
         </header>
 
         {errorMessage ? <div className="error-banner">{errorMessage}</div> : null}
@@ -408,9 +407,6 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                 <p className="section-label">Prompt</p>
                 <div className="prompt-copy">
                   <h1 className="prompt-headline">{promptHeadline}</h1>
-                  <p className="prompt-meta">
-                    {prompt ? `${prompt.category} / ${prompt.action} / ${prompt.variation}` : "No prompt"}
-                  </p>
                   <p className="prompt-support">
                     {reviewRecording
                       ? reviewRecording.failure_reason

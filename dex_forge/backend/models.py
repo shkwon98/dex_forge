@@ -38,12 +38,6 @@ class Scenario(BaseModel):
     prompt_text: str
 
 
-class TaskLabel(BaseModel):
-    category: str
-    action: str
-    variation: str
-
-
 class EventRecord(BaseModel):
     timestamp: datetime
     recording_id: str | None
@@ -62,11 +56,12 @@ class HandPosePoint(BaseModel):
 
 
 class RecordingRecord(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True, use_enum_values=False)
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True, use_enum_values=False
+    )
 
     recording_id: str
     task_id: str
-    label: TaskLabel
     prompt_text: str
     active_hands: HandMode
     recorded_topics: list[str] = Field(default_factory=list)
@@ -78,7 +73,9 @@ class RecordingRecord(BaseModel):
     status: RecorderState
     failure_reason: str | None = None
     operator_note: str = ""
-    review_preview: dict[str, list[list[HandPosePoint]]] = Field(default_factory=dict)
+    review_preview: dict[str, list[list[HandPosePoint]]] = Field(
+        default_factory=dict
+    )
     recording_dir: Path
 
 
@@ -89,5 +86,7 @@ class CollectorSnapshot(BaseModel):
     accepted_recording_count: int = 0
     current_state: RecorderState
     current_prompt: Scenario | None
-    hand_pose_preview: dict[str, list[HandPosePoint]] = Field(default_factory=dict)
+    hand_pose_preview: dict[str, list[HandPosePoint]] = Field(
+        default_factory=dict
+    )
     topic_health: dict[str, Any] = Field(default_factory=dict)
