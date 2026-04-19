@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 import hashlib
 import json
+import yaml
 
 from geometry_msgs.msg import Point, Pose, PoseArray, Quaternion
 import pytest
@@ -195,6 +196,15 @@ def test_same_prompt_accumulates_recordings_under_one_task_folder(service):
     assert not first_clip.clip_dir.joinpath("events.jsonl").exists()
     assert not first_clip.clip_dir.joinpath("recording_manifest.json").exists()
     assert first_clip.clip_dir.joinpath("metadata.yaml").exists()
+
+    metadata = yaml.safe_load(first_clip.clip_dir.joinpath("metadata.yaml").read_text())
+    bag_info = metadata["rosbag2_bagfile_information"]
+    assert bag_info["storage_identifier"] == "mcap"
+    assert bag_info["relative_file_paths"] == ["recording.mcap"]
+    assert any(
+        topic["topic_metadata"]["name"] == "/teleop/human/hand_left/pose"
+        for topic in bag_info["topics_with_message_count"]
+    )
 
 
 def test_stop_marks_clip_invalid_when_required_topic_has_no_frames(service):
