@@ -104,6 +104,11 @@ export const apiClient = {
     request("/api/collection"),
   getNextPrompt: async () =>
     request("/api/prompts/next", { method: "POST" }),
+  translatePrompt: async (promptText) =>
+    request("/api/prompts/translate", {
+      method: "POST",
+      body: JSON.stringify({ prompt_text: promptText }),
+    }),
   updateActiveHands: async (activeHands) =>
     request("/api/collection/active-hands", {
       method: "POST",

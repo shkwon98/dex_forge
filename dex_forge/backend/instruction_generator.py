@@ -7,6 +7,7 @@ from collections import OrderedDict
 from typing import Any
 
 import ollama
+from deep_translator import GoogleTranslator
 
 from .models import Scenario
 
@@ -14,23 +15,24 @@ from .models import Scenario
 def build_instruction_prompt(num_items: int) -> str:
     return f"""
 You are an expert in human gestures and hand kinematics.
-Generate {num_items} unique, distinct, and concise instructions for a SINGLE human hand.
+Generate {num_items} HIGHLY DIVERSE, unique, and concise instructions for an ISOLATED SINGLE human hand.
 
-Examples of good instructions:
+Examples of diverse instructions:
 - Point with the right index finger and press downward once.
+- Rotate the wrist 90 degrees outward while keeping all fingers straight.
 - Make a circle with the thumb and index finger, then release.
-- Curl the middle, ring, and pinky fingers into the palm while keeping the index and thumb straight.
-- Rub the pad of the thumb against the side of the index finger.
-- Spread all five fingers as far apart as possible, then relax.
+- Squeeze the hand into a tight fist, hold for a second, then open it wide.
+- Tap the pad of the thumb sequentially against the tips of all other fingers.
 
-Rules:
-1. Only describe actions that are physically natural for a human hand.
-2. You can utilize the palm, back of the hand, knuckles, and basic wrist twists.
-3. Be concise, precise, and unambiguous.
-4. Output STRICTLY as a JSON array of strings. Do not add any conversational text or markdown formatting outside the array.
+STRICT RULES:
+1. EXTREME DIVERSITY (CRITICAL): Every single instruction MUST be fundamentally different. DO NOT repeat the same action (e.g., Do not generate multiple "Bend the [finger]" instructions). 
+2. VARY YOUR VERBS: Force yourself to use different kinematics such as: spread, pinch, rotate, tap, swipe, flick, squeeze, curl, extend.
+3. ISOLATED HAND ONLY: Completely self-contained. DO NOT interact with the face, arms, torso, or external objects.
+4. ANATOMICAL ACCURACY: You can bend/curl/extend *fingers*, but you CANNOT "curl" a knuckle.
+5. Output STRICTLY as a JSON array of strings. Do not add any conversational text.
 
 Valid JSON format example:
-[\"instruction 1\", \"instruction 2\", \"instruction 3\"]
+["instruction 1", "instruction 2", "instruction 3"]
 """.strip()
 
 
@@ -64,29 +66,44 @@ def parse_instruction_array(raw_text: str) -> list[str]:
                     "ollama response is not valid JSON or Python literal"
                 )
 
-    # 4. If dict, try to extract array value
+    # 4. If dict, try to extract array value or string value
     if isinstance(payload, dict):
         arr = None
+        # 4-1. Try to find a list value
         for v in payload.values():
             if isinstance(v, list):
                 arr = v
                 break
+        # 4-2. If not found, try to find a string value
         if arr is None:
-            # Maybe nested dict with array inside
+            for v in payload.values():
+                if isinstance(v, str):
+                    arr = [v]
+                    break
+        # 4-3. Maybe nested dict with array inside
+        if arr is None:
             for v in payload.values():
                 if isinstance(v, dict):
                     for vv in v.values():
                         if isinstance(vv, list):
                             arr = vv
                             break
+        # 4-4. Maybe nested dict with string inside
+        if arr is None:
+            for v in payload.values():
+                if isinstance(v, dict):
+                    for vv in v.values():
+                        if isinstance(vv, str):
+                            arr = [vv]
+                            break
         if arr is not None:
             payload = arr
         else:
             logger.error(
-                f"Ollama response JSON object does not contain an array value: {raw_text}"
+                f"Ollama response JSON object does not contain an array or string value: {raw_text}"
             )
             raise ValueError(
-                "ollama response JSON object does not contain an array value"
+                "ollama response JSON object does not contain an array or string value"
             )
 
     # 5. If not a list, but a single string, wrap as list
@@ -139,6 +156,11 @@ class OllamaInstructionGenerator:
                 }
             ],
             format="json",
+            options={
+                "temperature": 0.9,  # 기본값보다 높여서 창의성 부여
+                "presence_penalty": 1.5,  # 새로운 주제를 말하도록 유도
+                "frequency_penalty": 1.5,  # 썼던 단어 반복 금지
+            },
         )
 
         raw_text = self._extract_message_content(response)
@@ -156,6 +178,15 @@ class OllamaInstructionGenerator:
 
     def generate_instruction(self) -> str:
         return self.generate_instructions(1)[0]
+
+    def translate_instruction(self, text: str) -> str:
+        if not text.strip():
+            return ""
+        return (
+            GoogleTranslator(source="auto", target="ko")
+            .translate(text)
+            .strip()
+        )
 
     def generate_scenario(self) -> Scenario:
         prompt_text = self.generate_instruction()

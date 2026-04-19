@@ -95,6 +95,13 @@ class CollectionService:
         self.current_prompt = self.prompt_generator.generate_scenario()
         return self.current_prompt
 
+    def translate_prompt(self, prompt_text: str) -> str:
+        translator = getattr(self.prompt_generator, "translate_instruction", None)
+        if translator is None:
+            return ""
+        translated = translator(prompt_text)
+        return translated.strip()
+
     def start_recording(
         self, start_time: datetime | None = None
     ) -> RecordingRecord:

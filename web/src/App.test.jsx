@@ -36,6 +36,9 @@ function createApi(overrides = {}) {
       dataset_root: "/tmp/chosen-dataset",
     }),
     getNextPrompt: async () => promptSequence[promptCalls++ % promptSequence.length],
+    translatePrompt: async (promptText) => ({
+      translated_text: `번역: ${promptText}`,
+    }),
     startRecording: async () => ({ ok: true }),
     stopRecording: async () => ({
       recording_id: "recording-1",
@@ -107,7 +110,8 @@ test("starts collection and keeps the chosen hand mode visible for later recordi
   await user.click(screen.getByRole("button", { name: /choose folder/i }));
   await user.click(screen.getByRole("button", { name: /start collection/i }));
 
-  await screen.findByText(/do a precision pinch/i);
+  await screen.findByRole("heading", { name: /do a precision pinch/i });
+  await screen.findByText(/번역: Do a precision pinch\./i);
   expect(screen.getByText(/saved 0/i)).toBeInTheDocument();
   expect(screen.getAllByText(/^right hand$/i).length).toBeGreaterThan(0);
   expect(screen.getByLabelText(/active hands/i)).toHaveValue("right");
@@ -155,7 +159,7 @@ test("runs prompt, record, note, and review actions through the operator flow", 
   expect(screen.getByRole("button", { name: /^again$/i })).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /^next$/i }));
   expect(screen.getByText(/saved 1/i)).toBeInTheDocument();
-  await screen.findByText(/perform a power grasp/i);
+  await screen.findByRole("heading", { name: /perform a power grasp/i });
 });
 
 
@@ -177,7 +181,7 @@ test("save and record one more keeps the same prompt ready for another take", as
   await waitFor(() => {
     expect(decideRecording).toHaveBeenCalledWith("recording-1", "accept");
   });
-  expect(screen.getByText(/do a precision pinch/i)).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /do a precision pinch/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /start recording/i })).toBeInTheDocument();
 });
 
@@ -204,6 +208,48 @@ test("discard requires a follow-up next or again choice", async () => {
 });
 
 
+test("invalid recordings skip confirm and go straight to again or next", async () => {
+  const user = userEvent.setup();
+  const decideRecording = vi.fn(async () => ({
+    recording_id: "recording-1",
+    status: "discarded",
+  }));
+  const api = createApi({
+    decideRecording,
+    stopRecording: async () => ({
+      recording_id: "recording-1",
+      status: "invalid",
+      failure_reason: "missing_required_topic_frames",
+      review_preview: {
+        left: [],
+        right: [],
+      },
+    }),
+  });
+  const statusSource = createStatusSource();
+
+  render(<App api={api} statusSource={statusSource} />);
+
+  await user.click(screen.getByRole("button", { name: /choose folder/i }));
+  await user.click(screen.getByRole("button", { name: /start collection/i }));
+  await user.click(screen.getByRole("button", { name: /start recording/i }));
+  await user.click(screen.getByRole("button", { name: /stop recording/i }));
+
+  expect(await screen.findByText(/failure reason: missing_required_topic_frames/i)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /confirm/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /^discard$/i })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /^next$/i })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /^again$/i })).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /^again$/i }));
+
+  await waitFor(() => {
+    expect(decideRecording).toHaveBeenCalledWith("recording-1", "discard");
+  });
+  expect(screen.getByRole("button", { name: /start recording/i })).toBeInTheDocument();
+});
+
+
 test("allows changing active hands during a collection until recording starts", async () => {
   const user = userEvent.setup();
   const updateActiveHands = vi.fn(async (activeHands) => ({
@@ -217,7 +263,7 @@ test("allows changing active hands during a collection until recording starts", 
 
   await user.click(screen.getByRole("button", { name: /choose folder/i }));
   await user.click(screen.getByRole("button", { name: /start collection/i }));
-  await screen.findByText(/do a precision pinch/i);
+  await screen.findByRole("heading", { name: /do a precision pinch/i });
 
   await user.selectOptions(screen.getByLabelText(/active hands/i), "both");
 
@@ -267,7 +313,7 @@ test("shows dataset root on launch and a finish-collection summary screen", asyn
 
   await user.click(screen.getByRole("button", { name: /choose folder/i }));
   await user.click(screen.getByRole("button", { name: /start collection/i }));
-  await screen.findByText(/do a precision pinch/i);
+  await screen.findByRole("heading", { name: /do a precision pinch/i });
 
   await user.click(screen.getByRole("button", { name: /finish collection/i }));
 

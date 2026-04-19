@@ -19,12 +19,22 @@ def resolve_project_root() -> Path:
     return Path(get_package_share_directory("dex_forge"))
 
 
+def resolve_ollama_model(project_root: Path | None = None) -> str:
+    base_dir = project_root or resolve_project_root()
+    config_path = base_dir / "config" / "runtime" / "ollama_model.txt"
+    if config_path.exists():
+        selected_model = config_path.read_text().strip()
+        if selected_model:
+            return selected_model
+    return "qwen2.5:7b"
+
+
 def build_service() -> CollectionService:
     project_root = resolve_project_root()
     dataset_root = project_root / "dataset"
     dataset_root.mkdir(parents=True, exist_ok=True)
     generator = OllamaInstructionGenerator(
-        model="qwen2.5:7b",
+        model=resolve_ollama_model(),
     )
 
     return CollectionService(

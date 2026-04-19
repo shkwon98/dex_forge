@@ -34,6 +34,10 @@ setup(
         ),
         (f"share/{package_name}", ["package.xml"]),
         *package_files(
+            project_root / "config" / "runtime",
+            f"share/{package_name}/config/runtime",
+        ),
+        *package_files(
             project_root / "web" / "dist",
             f"share/{package_name}/web/dist",
         ),

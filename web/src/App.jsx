@@ -72,6 +72,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
   const [datasetRoot, setDatasetRoot] = useState("");
   const [collection, setCollection] = useState(null);
   const [prompt, setPrompt] = useState(null);
+  const [translatedPrompt, setTranslatedPrompt] = useState("");
   const [recording, setRecording] = useState(false);
   const [reviewRecording, setReviewRecording] = useState(null);
   const [reviewResolution, setReviewResolution] = useState(null);
@@ -131,6 +132,33 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
     return () => window.clearInterval(intervalId);
   }, [focusedHand, reviewRecording]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTranslation() {
+      if (!prompt?.prompt_text || reviewRecording) {
+        setTranslatedPrompt("");
+        return;
+      }
+      try {
+        const result = await api.translatePrompt(prompt.prompt_text);
+        if (!cancelled) {
+          setTranslatedPrompt(result.translated_text || "");
+        }
+      } catch {
+        if (!cancelled) {
+          setTranslatedPrompt("");
+        }
+      }
+    }
+
+    loadTranslation();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, prompt, reviewRecording]);
+
   const effectiveDatasetRoot = datasetRoot || liveSnapshot.dataset_root || "";
 
   async function handleStartCollection(event) {
@@ -148,6 +176,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
       setCollection(started);
       setDatasetRoot(started.dataset_root || effectiveDatasetRoot);
       setPrompt(firstPrompt);
+      setTranslatedPrompt("");
       setReviewRecording(null);
       setReviewResolution(null);
       setFinishedSummary(null);
@@ -175,6 +204,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
     try {
       const nextPrompt = await api.getNextPrompt();
       setPrompt(nextPrompt);
+      setTranslatedPrompt("");
       setReviewRecording(null);
       setReviewResolution(null);
       setRecording(false);
@@ -257,8 +287,17 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
   async function handleAfterReview(action) {
     setErrorMessage("");
     try {
+      if (
+        reviewRecording &&
+        (reviewRecording.failure_reason || reviewRecording.status === "invalid")
+      ) {
+        await api.decideRecording(reviewRecording.recording_id, "discard");
+      }
       if (action === "next") {
         setPrompt(await api.getNextPrompt());
+      }
+      if (action !== "next") {
+        setTranslatedPrompt("");
       }
       setReviewRecording(null);
       setReviewResolution(null);
@@ -282,6 +321,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
       }));
       setCollection(null);
       setPrompt(null);
+      setTranslatedPrompt("");
       setReviewRecording(null);
       setReviewResolution(null);
       setRecording(false);
@@ -292,6 +332,9 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
 
   const currentMode = collection?.active_hands ?? activeHands;
   const reviewFrames = reviewRecording?.review_preview?.[focusedHand] ?? [];
+  const invalidReview = Boolean(
+    reviewRecording?.failure_reason || reviewRecording?.status === "invalid",
+  );
   const visiblePoints = reviewRecording
     ? (reviewFrames[reviewFrameIndex % Math.max(reviewFrames.length, 1)] ?? [])
     : (liveSnapshot.hand_pose_preview?.[focusedHand] ?? []);
@@ -407,10 +450,13 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                 <p className="section-label">Prompt</p>
                 <div className="prompt-copy">
                   <h1 className="prompt-headline">{promptHeadline}</h1>
+                  {!reviewRecording && translatedPrompt ? (
+                    <p className="prompt-translation">{translatedPrompt}</p>
+                  ) : null}
                   <p className="prompt-support">
                     {reviewRecording
                       ? reviewRecording.failure_reason
-                        ? `Failure reason: ${reviewRecording.failure_reason}`
+                        ? `Failure reason: ${reviewRecording.failure_reason}. Choose Next for a new prompt or Again to record the same prompt once more.`
                         : reviewResolution === "confirm"
                           ? "Confirmed. Choose Next for a new prompt or Again to record the same prompt once more."
                           : reviewResolution === "discard"
@@ -437,7 +483,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
 
                   {reviewRecording ? (
                     <>
-                      {!reviewResolution ? (
+                      {!reviewResolution && !invalidReview ? (
                         <>
                           <button type="button" className="primary-action" onClick={() => handleReviewDecision("confirm")}>
                             Confirm

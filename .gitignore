@@ -11,5 +11,6 @@ log/
 node_modules/
 web/node_modules/
 web/dist/
+config/runtime/ollama_model.txt
 **/.superpowers/
 **/superpowers/

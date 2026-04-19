@@ -34,6 +34,10 @@ class AddNoteRequest(BaseModel):
     note: str
 
 
+class TranslatePromptRequest(BaseModel):
+    prompt_text: str
+
+
 def _pick_dataset_root_with_tkinter() -> str:
     import tkinter as tk
     from tkinter import filedialog
@@ -156,6 +160,10 @@ def create_app(
     @app.post("/api/prompts/next")
     def next_prompt():
         return service.next_prompt()
+
+    @app.post("/api/prompts/translate")
+    def translate_prompt(request: TranslatePromptRequest):
+        return {"translated_text": service.translate_prompt(request.prompt_text)}
 
     @app.post("/api/recordings/start")
     def start_recording():

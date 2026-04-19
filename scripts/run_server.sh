@@ -4,7 +4,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 WORKSPACE_ROOT="$(cd "${REPO_ROOT}/../.." && pwd)"
+CONFIG_FILE="${REPO_ROOT}/config/runtime/ollama_model.txt"
 OLLAMA_MODEL="qwen2.5:7b"
+
+load_model_config() {
+	if [[ -f "${CONFIG_FILE}" ]]; then
+		OLLAMA_MODEL="$(tr -d '\r' < "${CONFIG_FILE}")"
+	fi
+}
 
 wait_for_ollama() {
 	local retries=30
@@ -35,11 +42,13 @@ ensure_ollama_ready() {
 	fi
 
 	if ! ollama show "${OLLAMA_MODEL}" >/dev/null 2>&1; then
-		echo "[dex_forge] Ollama 모델 '${OLLAMA_MODEL}' 이 없어 pull을 진행합니다..."
-		ollama pull "${OLLAMA_MODEL}"
+		echo "[dex_forge] Ollama 모델 '${OLLAMA_MODEL}' 을 찾을 수 없습니다."
+		echo "[dex_forge] 먼저 ./scripts/setup.sh 를 다시 실행해서 모델을 설치하세요."
+		exit 1
 	fi
 }
 
+load_model_config
 ensure_ollama_ready
 
 cd "${WORKSPACE_ROOT}"

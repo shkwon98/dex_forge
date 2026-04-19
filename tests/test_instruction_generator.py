@@ -60,7 +60,7 @@ def test_ollama_generator_calls_generate_api_and_returns_requested_count(
     def fake_chat(model, messages, format):
         assert model == "test-model"
         assert format == "json"
-        assert "Generate 2 unique" in messages[0]["content"]
+        assert "Generate 2 HIGHLY DIVERSE, unique" in messages[0]["content"]
         return {
             "message": {
                 "content": '["A", "B", "C"]',

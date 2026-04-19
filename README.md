@@ -103,6 +103,8 @@ This script:
 
 - installs Python development dependencies
 - installs Ollama automatically on Linux when missing
+- prompts for the Ollama model to use and saves it in `config/runtime/ollama_model.txt`
+- pulls the selected Ollama model during setup
 - installs frontend dependencies in `web/`
 
 ### 2. Build DexForge

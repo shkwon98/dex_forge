@@ -102,3 +102,35 @@ def test_pick_dataset_root_falls_back_to_tkinter_when_zenity_fails(monkeypatch):
     selected = pick_dataset_root()
 
     assert selected == "/tmp/from-tk"
+
+
+def test_translate_prompt_endpoint_uses_service_translation(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from dex_forge.backend.api import create_app
+
+    class StubService:
+        def translate_prompt(self, prompt_text: str) -> str:
+            return f"ko:{prompt_text}"
+
+        def snapshot(self):
+            class Snapshot:
+                def model_dump(self, mode="json"):
+                    return {}
+
+            return Snapshot()
+
+    web_dist = tmp_path / "web" / "dist"
+    web_dist.mkdir(parents=True)
+    web_dist.joinpath("index.html").write_text("<html>ui</html>")
+
+    app = create_app(StubService(), web_dist=web_dist)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/prompts/translate",
+        json={"prompt_text": "Do a precision pinch."},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"translated_text": "ko:Do a precision pinch."}

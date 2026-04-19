@@ -334,6 +334,12 @@ textarea {
   font: 600 0.92rem/1.5 "Sora", sans-serif;
 }
 
+.prompt-translation {
+  margin: -2px 0 0;
+  color: var(--accent-strong);
+  font: 600 1rem/1.45 "Sora", sans-serif;
+}
+
 .summary-line {
   margin: 0;
   color: var(--ink);
