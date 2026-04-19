@@ -16,20 +16,6 @@ function handModeLabel(activeHands) {
 }
 
 
-function promptMatchesHands(prompt, activeHands) {
-  if (!prompt) {
-    return false;
-  }
-  if (activeHands === "left") {
-    return prompt.allowed_hands === "left" || prompt.allowed_hands === "either";
-  }
-  if (activeHands === "right") {
-    return prompt.allowed_hands === "right" || prompt.allowed_hands === "either";
-  }
-  return ["left", "right", "both", "either"].includes(prompt.allowed_hands);
-}
-
-
 function LaunchViewerPanel({ activeHands, previews }) {
   if (activeHands === "both") {
     return (
@@ -83,20 +69,21 @@ function FocusedHandToggle({ activeHands, focusedHand, onChange }) {
 export function App({ api = apiClient, statusSource: providedStatusSource }) {
   const [statusSource] = useState(() => providedStatusSource ?? createStatusSource());
   const [activeHands, setActiveHands] = useState("left");
-  const [sessionNotes, setSessionNotes] = useState("");
   const [datasetRoot, setDatasetRoot] = useState("");
-  const [session, setSession] = useState(null);
+  const [collection, setCollection] = useState(null);
   const [prompt, setPrompt] = useState(null);
   const [recording, setRecording] = useState(false);
-  const [reviewClip, setReviewClip] = useState(null);
+  const [reviewRecording, setReviewRecording] = useState(null);
+  const [reviewResolution, setReviewResolution] = useState(null);
   const [reviewFrameIndex, setReviewFrameIndex] = useState(0);
-  const [clipNote, setClipNote] = useState("");
+  const [recordingNote, setRecordingNote] = useState("");
   const [finishedSummary, setFinishedSummary] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [liveSnapshot, setLiveSnapshot] = useState({
+    is_collecting: false,
     current_state: "idle",
     dataset_root: "",
-    accepted_clip_count: 0,
+    accepted_recording_count: 0,
     hand_pose_preview: { left: [], right: [] },
     active_hands: "left",
   });
@@ -110,21 +97,30 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
   }, [statusSource]);
 
   useEffect(() => {
-    const currentMode = session?.active_hands ?? activeHands;
+    if (liveSnapshot.is_collecting && !collection && !finishedSummary) {
+      setCollection({
+        active_hands: liveSnapshot.active_hands,
+        dataset_root: liveSnapshot.dataset_root,
+      });
+    }
+  }, [collection, finishedSummary, liveSnapshot]);
+
+  useEffect(() => {
+    const currentMode = collection?.active_hands ?? activeHands;
     if (currentMode === "right") {
       setFocusedHand("right");
     } else if (currentMode === "left") {
       setFocusedHand("left");
     }
-  }, [activeHands, session?.active_hands]);
+  }, [activeHands, collection?.active_hands]);
 
   useEffect(() => {
     setReviewFrameIndex(0);
-  }, [focusedHand, reviewClip?.clip_id]);
+  }, [focusedHand, reviewRecording?.recording_id]);
 
   useEffect(() => {
-    const reviewFrames = reviewClip?.review_preview?.[focusedHand] ?? [];
-    if (!reviewClip || reviewFrames.length <= 1) {
+    const reviewFrames = reviewRecording?.review_preview?.[focusedHand] ?? [];
+    if (!reviewRecording || reviewFrames.length <= 1) {
       return undefined;
     }
 
@@ -133,31 +129,31 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
     }, 220);
 
     return () => window.clearInterval(intervalId);
-  }, [focusedHand, reviewClip]);
+  }, [focusedHand, reviewRecording]);
 
   const effectiveDatasetRoot = datasetRoot || liveSnapshot.dataset_root || "";
 
-  async function handleStartSession(event) {
+  async function handleStartCollection(event) {
     event.preventDefault();
     setErrorMessage("");
     try {
       if (!effectiveDatasetRoot) {
-        throw new Error("Choose a dataset folder before starting the session.");
+        throw new Error("Choose a dataset folder before starting collection.");
       }
-      const created = await api.createSession({
+      const started = await api.startCollection({
         activeHands,
-        notes: sessionNotes,
         datasetRoot: effectiveDatasetRoot,
       });
       const firstPrompt = await api.getNextPrompt();
-      setSession(created);
-      setDatasetRoot(created.dataset_root || effectiveDatasetRoot);
+      setCollection(started);
+      setDatasetRoot(started.dataset_root || effectiveDatasetRoot);
       setPrompt(firstPrompt);
-      setReviewClip(null);
+      setReviewRecording(null);
+      setReviewResolution(null);
       setFinishedSummary(null);
       setRecording(false);
     } catch (error) {
-      setErrorMessage(error.message || "Failed to start session.");
+      setErrorMessage(error.message || "Failed to start collection.");
     }
   }
 
@@ -179,7 +175,8 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
     try {
       const nextPrompt = await api.getNextPrompt();
       setPrompt(nextPrompt);
-      setReviewClip(null);
+      setReviewRecording(null);
+      setReviewResolution(null);
       setRecording(false);
     } catch (error) {
       setErrorMessage(error.message || "Failed to load a prompt.");
@@ -187,20 +184,15 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
   }
 
   async function handleActiveHandsChange(nextHands) {
-    if (!session || recording) {
+    if (!collection || recording) {
       return;
     }
 
     setErrorMessage("");
     try {
-      const updatedSession = await api.updateActiveHands(nextHands);
-      setSession((current) => ({ ...current, ...updatedSession }));
-      setActiveHands(updatedSession.active_hands);
-
-      if (!reviewClip && !promptMatchesHands(prompt, updatedSession.active_hands)) {
-        const nextPrompt = await api.getNextPrompt();
-        setPrompt(nextPrompt);
-      }
+      const updated = await api.updateActiveHands(nextHands);
+      setCollection(updated);
+      setActiveHands(updated.active_hands);
     } catch (error) {
       setErrorMessage(error.message || "Failed to update active hands.");
     }
@@ -212,9 +204,9 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
     }
     setErrorMessage("");
     try {
-      await api.startClip();
+      await api.startRecording();
       setRecording(true);
-      setReviewClip(null);
+      setReviewRecording(null);
     } catch (error) {
       setErrorMessage(error.message || "Failed to start recording.");
     }
@@ -223,77 +215,91 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
   async function handleStopRecording() {
     setErrorMessage("");
     try {
-      const stopped = await api.stopClip();
+      const stopped = await api.stopRecording();
       setRecording(false);
-      setReviewClip(stopped);
+      setReviewRecording(stopped);
+      setReviewResolution(null);
     } catch (error) {
       setErrorMessage(error.message || "Failed to stop recording.");
     }
   }
 
   async function handleSaveNote() {
-    if (!clipNote) {
+    if (!recordingNote) {
       return;
     }
     setErrorMessage("");
     try {
-      await api.addNote(clipNote);
-      setClipNote("");
+      await api.addNote(recordingNote);
+      setRecordingNote("");
     } catch (error) {
       setErrorMessage(error.message || "Failed to save note.");
     }
   }
 
-  async function handleDecision(decision) {
-    if (!reviewClip) {
+  async function handleReviewDecision(decision) {
+    if (!reviewRecording) {
       return;
     }
     setErrorMessage("");
     try {
-      const result = await api.decideClip(reviewClip.clip_id, decision);
-      setReviewClip(null);
+      const resolvedDecision = decision === "confirm" ? "accept" : "discard";
+      await api.decideRecording(reviewRecording.recording_id, resolvedDecision);
+      setReviewResolution(decision);
       setRecording(false);
-      if (result.status === "accepted") {
-        setPrompt(await api.getNextPrompt());
-      } else if (result.status === "discarded") {
-        setPrompt(await api.getNextPrompt());
-      }
-
-      const updatedHands = session?.active_hands ?? activeHands;
-      if (!promptMatchesHands(prompt, updatedHands)) {
-        const nextPrompt = await api.getNextPrompt();
-        setPrompt(nextPrompt);
-      }
+      return null;
     } catch (error) {
-      setErrorMessage(error.message || "Failed to update clip decision.");
+      setErrorMessage(error.message || "Failed to update recording decision.");
+      return null;
     }
   }
 
-  async function handleFinishSession() {
+  async function handleAfterReview(action) {
     setErrorMessage("");
     try {
-      const summary = await api.finishSession();
-      setFinishedSummary(summary);
-      setDatasetRoot(summary.dataset_root || datasetRoot);
-      setSession(null);
-      setPrompt(null);
-      setReviewClip(null);
+      if (action === "next") {
+        setPrompt(await api.getNextPrompt());
+      }
+      setReviewRecording(null);
+      setReviewResolution(null);
       setRecording(false);
     } catch (error) {
-      setErrorMessage(error.message || "Failed to finish session.");
+      setErrorMessage(error.message || "Failed to load the next prompt.");
     }
   }
 
-  const currentMode = session?.active_hands ?? activeHands;
-  const reviewFrames = reviewClip?.review_preview?.[focusedHand] ?? [];
-  const visiblePoints = reviewClip
+  async function handleFinishCollection() {
+    setErrorMessage("");
+    try {
+      const summary = await api.finishCollection();
+      setFinishedSummary(summary);
+      setDatasetRoot(summary.dataset_root || datasetRoot);
+      setLiveSnapshot((current) => ({
+        ...current,
+        is_collecting: false,
+        current_state: "idle",
+        dataset_root: summary.dataset_root || current.dataset_root,
+      }));
+      setCollection(null);
+      setPrompt(null);
+      setReviewRecording(null);
+      setReviewResolution(null);
+      setRecording(false);
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to finish collection.");
+    }
+  }
+
+  const currentMode = collection?.active_hands ?? activeHands;
+  const reviewFrames = reviewRecording?.review_preview?.[focusedHand] ?? [];
+  const visiblePoints = reviewRecording
     ? (reviewFrames[reviewFrameIndex % Math.max(reviewFrames.length, 1)] ?? [])
     : (liveSnapshot.hand_pose_preview?.[focusedHand] ?? []);
-  const promptHeadline = reviewClip
-    ? "Review the recorded clip."
-    : prompt?.prompt_text || "Loading prompt...";
+  const promptHeadline = reviewRecording
+    ? "Review the recorded sample."
+    : prompt?.prompt_text || "Load a prompt to begin.";
   const datasetPathDescription = effectiveDatasetRoot || "No dataset folder selected";
-  const acceptedClipCount = liveSnapshot.accepted_clip_count ?? 0;
+  const acceptedRecordingCount = liveSnapshot.accepted_recording_count ?? 0;
 
   return (
     <div className="page-shell">
@@ -308,12 +314,12 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
 
         {errorMessage ? <div className="error-banner">{errorMessage}</div> : null}
 
-        {!session ? (
+        {!collection ? (
           <section className="launch-shell">
-            <form className="launch-panel" onSubmit={handleStartSession}>
+            <form className="launch-panel" onSubmit={handleStartCollection}>
               <div className="panel-heading">
-                <p className="section-label">Start Session</p>
-                <h1>Choose the hand mode and start recording.</h1>
+                <p className="section-label">Start Collection</p>
+                <h1>Choose the hand mode and begin collecting recordings.</h1>
               </div>
 
               <label>
@@ -329,17 +335,6 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                 </select>
               </label>
 
-              <label>
-                Session notes
-                <textarea
-                  aria-label="Session notes"
-                  value={sessionNotes}
-                  onChange={(event) => setSessionNotes(event.target.value)}
-                  rows={4}
-                  placeholder="Optional notes about props, setup, or special conditions"
-                />
-              </label>
-
               <div className="field-group">
                 <p className="field-label">Dataset root</p>
                 <div className="dataset-root-card" data-testid="dataset-root-card">
@@ -348,8 +343,8 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                     <p className="dataset-root-path">{datasetPathDescription}</p>
                     <p className="dataset-root-hint">
                       {effectiveDatasetRoot
-                        ? "DexForge will save session manifests, event logs, and MCAP recordings directly to this path."
-                        : "Choose a dataset folder before starting the session."}
+                        ? "DexForge will save task folders and MCAP recordings directly to this path."
+                        : "Choose a dataset folder before starting collection."}
                     </p>
                   </div>
                   <div className="dataset-root-actions">
@@ -366,20 +361,20 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
               </div>
 
               <button type="submit" className="primary-action">
-                Start session
+                Start collection
               </button>
             </form>
 
             {finishedSummary ? (
               <section className="summary-panel">
                 <div className="panel-heading">
-                  <p className="section-label">Session Saved</p>
-                  <h1>Session saved and ready to close or start a new run.</h1>
+                  <p className="section-label">Collection Saved</p>
+                  <h1>Collection finished. You can close DexForge or begin another run.</h1>
                 </div>
                 <p className="summary-line">Dataset folder: {finishedSummary.dataset_root || datasetPathDescription}</p>
-                <p className="summary-line">Accepted clips: {finishedSummary.accepted_count}</p>
-                <p className="summary-line">Discarded clips: {finishedSummary.discarded_count}</p>
-                <p className="summary-line">Invalid clips: {finishedSummary.invalid_count}</p>
+                <p className="summary-line">Saved recordings: {finishedSummary.accepted_count}</p>
+                <p className="summary-line">Discarded recordings: {finishedSummary.discarded_count}</p>
+                <p className="summary-line">Invalid recordings: {finishedSummary.invalid_count}</p>
               </section>
             ) : null}
 
@@ -390,14 +385,14 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
             <section className="capture-stage">
               <div className="status-row">
                 <div>
-                  <p className="section-label">Session</p>
-                  <strong>{handModeLabel(session.active_hands)}</strong>
+                  <p className="section-label">Collection</p>
+                  <strong>{handModeLabel(collection.active_hands)}</strong>
                 </div>
                 <label className="session-hand-mode">
                   <span className="section-label">Active hands</span>
                   <select
                     aria-label="Active hands"
-                    value={session.active_hands}
+                    value={collection.active_hands}
                     disabled={recording}
                     onChange={(event) => handleActiveHandsChange(event.target.value)}
                   >
@@ -406,7 +401,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                     <option value="both">Both</option>
                   </select>
                 </label>
-                <div className="header-chip">Saved {acceptedClipCount}</div>
+                <div className="header-chip">Saved {acceptedRecordingCount}</div>
               </div>
 
               <div className="prompt-stage">
@@ -417,10 +412,14 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                     {prompt ? `${prompt.category} / ${prompt.action} / ${prompt.variation}` : "No prompt"}
                   </p>
                   <p className="prompt-support">
-                    {reviewClip
-                      ? reviewClip.failure_reason
-                        ? `Failure reason: ${reviewClip.failure_reason}`
-                        : "Choose accept, discard, or retry."
+                    {reviewRecording
+                      ? reviewRecording.failure_reason
+                        ? `Failure reason: ${reviewRecording.failure_reason}`
+                        : reviewResolution === "confirm"
+                          ? "Confirmed. Choose Next for a new prompt or Again to record the same prompt once more."
+                          : reviewResolution === "discard"
+                            ? "Discarded. Choose Next for a new prompt or Again to retry the same prompt."
+                            : "Confirm or discard this recording first."
                       : recording
                         ? "Recording in progress"
                         : "Ready"}
@@ -428,7 +427,7 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                 </div>
 
                 <div className="action-deck">
-                  {prompt && !recording && !reviewClip ? (
+                  {prompt && !recording && !reviewRecording ? (
                     <button type="button" className="record-action" onClick={handleStartRecording}>
                       Start recording
                     </button>
@@ -440,21 +439,31 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                     </button>
                   ) : null}
 
-                  {reviewClip ? (
+                  {reviewRecording ? (
                     <>
-                      <button type="button" className="primary-action" onClick={() => handleDecision("accept")}>
-                        Accept clip
-                      </button>
-                      <button type="button" className="secondary-action" onClick={() => handleDecision("discard")}>
-                        Discard clip
-                      </button>
-                      <button type="button" className="secondary-action" onClick={() => handleDecision("retry")}>
-                        Retry clip
-                      </button>
+                      {!reviewResolution ? (
+                        <>
+                          <button type="button" className="primary-action" onClick={() => handleReviewDecision("confirm")}>
+                            Confirm
+                          </button>
+                          <button type="button" className="secondary-action" onClick={() => handleReviewDecision("discard")}>
+                            Discard
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button type="button" className="secondary-action" onClick={() => handleAfterReview("again")}>
+                            Again
+                          </button>
+                          <button type="button" className="primary-action" onClick={() => handleAfterReview("next")}>
+                            Next
+                          </button>
+                        </>
+                      )}
                     </>
                   ) : null}
 
-                  {!recording && !reviewClip ? (
+                  {!recording && !reviewRecording ? (
                     <button type="button" className="secondary-action" onClick={handleRefreshPrompt}>
                       Change prompt
                     </button>
@@ -464,12 +473,12 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
 
               <div className="annotation-strip">
                 <label className="annotation-input">
-                  <span className="section-label">Clip note</span>
+                  <span className="section-label">Recording note</span>
                   <input
-                    aria-label="Clip note"
-                    value={clipNote}
-                    onChange={(event) => setClipNote(event.target.value)}
-                    placeholder="Optional note for this clip"
+                    aria-label="Recording note"
+                    value={recordingNote}
+                    onChange={(event) => setRecordingNote(event.target.value)}
+                    placeholder="Optional note for this recording"
                   />
                 </label>
                 <button type="button" className="secondary-action" onClick={handleSaveNote}>
@@ -477,10 +486,10 @@ export function App({ api = apiClient, statusSource: providedStatusSource }) {
                 </button>
               </div>
 
-              {!recording && !reviewClip ? (
+              {!recording && !reviewRecording ? (
                 <div className="session-actions">
-                  <button type="button" className="secondary-action" onClick={handleFinishSession}>
-                    Finish session
+                  <button type="button" className="secondary-action" onClick={handleFinishCollection}>
+                    Finish collection
                   </button>
                 </div>
               ) : null}

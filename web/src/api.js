@@ -1,5 +1,6 @@
 function idleSnapshot() {
   return {
+    is_collecting: false,
     current_state: "idle",
     active_hands: "left",
     hand_pose_preview: { left: [], right: [] },
@@ -27,7 +28,7 @@ function startPolling(callback, intervalMs = 100) {
 
   const tick = async () => {
     try {
-      const snapshot = await request("/api/sessions/current");
+      const snapshot = await request("/api/collection");
       if (active) {
         callback(snapshot);
       }
@@ -91,35 +92,34 @@ export function createStatusSource() {
 
 
 export const apiClient = {
-  createSession: async ({ activeHands, notes, datasetRoot = "" }) =>
-    request("/api/sessions", {
+  startCollection: async ({ activeHands, datasetRoot = "" }) =>
+    request("/api/collection/start", {
       method: "POST",
       body: JSON.stringify({
         active_hands: activeHands,
-        notes,
         dataset_root: datasetRoot,
       }),
     }),
-  getCurrentSession: async () =>
-    request("/api/sessions/current"),
+  getCollection: async () =>
+    request("/api/collection"),
   getNextPrompt: async () =>
     request("/api/prompts/next", { method: "POST" }),
   updateActiveHands: async (activeHands) =>
-    request("/api/sessions/active-hands", {
+    request("/api/collection/active-hands", {
       method: "POST",
       body: JSON.stringify({ active_hands: activeHands }),
     }),
-  startClip: async () =>
-    request("/api/clips/start", { method: "POST" }),
-  stopClip: async () =>
-    request("/api/clips/stop", { method: "POST" }),
-  decideClip: async (clipId, decision) =>
-    request(`/api/clips/${clipId}/decision`, {
+  startRecording: async () =>
+    request("/api/recordings/start", { method: "POST" }),
+  stopRecording: async () =>
+    request("/api/recordings/stop", { method: "POST" }),
+  decideRecording: async (recordingId, decision) =>
+    request(`/api/recordings/${recordingId}/decision`, {
       method: "POST",
       body: JSON.stringify({ decision }),
     }),
-  finishSession: async () =>
-    request("/api/sessions/finish", {
+  finishCollection: async () =>
+    request("/api/collection/finish", {
       method: "POST",
     }),
   pickDatasetRoot: async () =>

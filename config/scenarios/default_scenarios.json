@@ -1,195 +1,74 @@
-{
-  "version": "v2",
-  "scenarios": [
-    {
-      "id": "power-grasp-small",
-      "category": "grasp",
-      "action": "power_grasp",
-      "variation": "small_object",
-      "prompt_text": "Power grasp a small imaginary object and release.",
-      "difficulty": "easy",
-      "allowed_hands": "either",
-      "tags": ["grasp", "release"]
-    },
-    {
-      "id": "pinch-precision",
-      "category": "pinch",
-      "action": "precision_pinch",
-      "variation": "index_thumb",
-      "prompt_text": "Perform a precise thumb-index pinch and hold briefly.",
-      "difficulty": "easy",
-      "allowed_hands": "either",
-      "tags": ["pinch", "precision"]
-    },
-    {
-      "id": "open-close-cycle",
-      "category": "gesture",
-      "action": "open_close",
-      "variation": "full_range",
-      "prompt_text": "Open the hand fully, then close into a relaxed fist.",
-      "difficulty": "easy",
-      "allowed_hands": "either",
-      "tags": ["open", "close"]
-    },
-    {
-      "id": "finger-spread-hold",
-      "category": "gesture",
-      "action": "finger_spread",
-      "variation": "hold",
-      "prompt_text": "Spread all fingers apart, hold briefly, then relax.",
-      "difficulty": "easy",
-      "allowed_hands": "either",
-      "tags": ["spread"]
-    },
-    {
-      "id": "index-tap-air",
-      "category": "gesture",
-      "action": "index_tap",
-      "variation": "air_tap",
-      "prompt_text": "Tap the index finger downward twice in the air.",
-      "difficulty": "easy",
-      "allowed_hands": "either",
-      "tags": ["tap", "index"]
-    },
-    {
-      "id": "thumb-sweep-palm",
-      "category": "gesture",
-      "action": "thumb_sweep",
-      "variation": "across_palm",
-      "prompt_text": "Sweep the thumb across the palm from open to closed.",
-      "difficulty": "medium",
-      "allowed_hands": "either",
-      "tags": ["thumb", "sweep"]
-    },
-    {
-      "id": "tripod-pinch-lift",
-      "category": "pinch",
-      "action": "tripod_pinch",
-      "variation": "lift_small_object",
-      "prompt_text": "Form a tripod pinch as if lifting a tiny object.",
-      "difficulty": "medium",
-      "allowed_hands": "either",
-      "tags": ["pinch", "tripod"]
-    },
-    {
-      "id": "hook-grip-pull",
-      "category": "grasp",
-      "action": "hook_grip",
-      "variation": "pull",
-      "prompt_text": "Curl the fingers into a hook grip and pull back slightly.",
-      "difficulty": "medium",
-      "allowed_hands": "either",
-      "tags": ["grasp", "hook"]
-    },
-    {
-      "id": "finger-wave-left",
-      "category": "gesture",
-      "action": "finger_wave",
-      "variation": "left_only",
-      "prompt_text": "Wave the fingers one by one with the left hand.",
-      "difficulty": "medium",
-      "allowed_hands": "left",
-      "tags": ["gesture", "left"]
-    },
-    {
-      "id": "left-palm-rotate",
-      "category": "pose",
-      "action": "palm_rotate",
-      "variation": "left_outward",
-      "prompt_text": "Rotate the left palm outward and back to neutral.",
-      "difficulty": "medium",
-      "allowed_hands": "left",
-      "tags": ["left", "rotation"]
-    },
-    {
-      "id": "left-thumb-index-circle",
-      "category": "gesture",
-      "action": "thumb_index_circle",
-      "variation": "left_only",
-      "prompt_text": "Make a circle with the left thumb and index finger, then release.",
-      "difficulty": "easy",
-      "allowed_hands": "left",
-      "tags": ["left", "circle"]
-    },
-    {
-      "id": "right-point-press",
-      "category": "gesture",
-      "action": "point_press",
-      "variation": "right_only",
-      "prompt_text": "Point with the right index finger and press downward once.",
-      "difficulty": "easy",
-      "allowed_hands": "right",
-      "tags": ["right", "point"]
-    },
-    {
-      "id": "right-lateral-pinch",
-      "category": "pinch",
-      "action": "lateral_pinch",
-      "variation": "right_only",
-      "prompt_text": "Pinch as if holding a thin card between the right thumb and index side.",
-      "difficulty": "medium",
-      "allowed_hands": "right",
-      "tags": ["right", "pinch"]
-    },
-    {
-      "id": "right-finger-roll",
-      "category": "gesture",
-      "action": "finger_roll",
-      "variation": "right_only",
-      "prompt_text": "Roll the right fingertips inward from index to little finger.",
-      "difficulty": "medium",
-      "allowed_hands": "right",
-      "tags": ["right", "sequence"]
-    },
-    {
-      "id": "bimanual-transfer",
-      "category": "coordination",
-      "action": "object_transfer",
-      "variation": "handoff",
-      "prompt_text": "Mimic passing an object from one hand to the other.",
-      "difficulty": "medium",
-      "allowed_hands": "both",
-      "tags": ["bimanual", "handoff"]
-    },
-    {
-      "id": "mirror-open-close",
-      "category": "coordination",
-      "action": "mirror_open_close",
-      "variation": "synchronous",
-      "prompt_text": "Open and close both hands in sync for one full cycle.",
-      "difficulty": "easy",
-      "allowed_hands": "both",
-      "tags": ["bimanual", "mirror"]
-    },
-    {
-      "id": "offset-open-close",
-      "category": "coordination",
-      "action": "offset_open_close",
-      "variation": "alternating",
-      "prompt_text": "Open one hand while closing the other, then swap.",
-      "difficulty": "medium",
-      "allowed_hands": "both",
-      "tags": ["bimanual", "alternating"]
-    },
-    {
-      "id": "dual-pinch-align",
-      "category": "coordination",
-      "action": "dual_pinch",
-      "variation": "alignment",
-      "prompt_text": "Form precision pinches with both hands at the same time and align them.",
-      "difficulty": "medium",
-      "allowed_hands": "both",
-      "tags": ["bimanual", "pinch"]
-    },
-    {
-      "id": "two-hand-sphere",
-      "category": "coordination",
-      "action": "sphere_hold",
-      "variation": "imaginary_ball",
-      "prompt_text": "Shape both hands as if holding a medium ball together.",
-      "difficulty": "easy",
-      "allowed_hands": "both",
-      "tags": ["bimanual", "shape"]
-    }
-  ]
-}
+[
+  {
+    "category": "grasp",
+    "action": "power_grasp",
+    "variation": "small_object",
+    "prompt_text": "Power grasp a small imaginary object and release."
+  },
+  {
+    "category": "pinch",
+    "action": "precision_pinch",
+    "variation": "index_thumb",
+    "prompt_text": "Perform a precise thumb-index pinch and hold briefly."
+  },
+  {
+    "category": "gesture",
+    "action": "open_close",
+    "variation": "full_range",
+    "prompt_text": "Open the hand fully, then close into a relaxed fist."
+  },
+  {
+    "category": "gesture",
+    "action": "finger_spread",
+    "variation": "hold",
+    "prompt_text": "Spread all fingers apart, hold briefly, then relax."
+  },
+  {
+    "category": "gesture",
+    "action": "index_tap",
+    "variation": "air_tap",
+    "prompt_text": "Tap the index finger downward twice in the air."
+  },
+  {
+    "category": "gesture",
+    "action": "thumb_sweep",
+    "variation": "across_palm",
+    "prompt_text": "Sweep the thumb across the palm from open to closed."
+  },
+  {
+    "category": "pinch",
+    "action": "tripod_pinch",
+    "variation": "lift_small_object",
+    "prompt_text": "Form a tripod pinch as if lifting a tiny object."
+  },
+  {
+    "category": "grasp",
+    "action": "hook_grip",
+    "variation": "pull",
+    "prompt_text": "Curl the fingers into a hook grip and pull back slightly."
+  },
+  {
+    "category": "gesture",
+    "action": "finger_wave",
+    "variation": "sequential",
+    "prompt_text": "Wave the fingers one by one from index to little finger."
+  },
+  {
+    "category": "pose",
+    "action": "palm_rotate",
+    "variation": "outward_return",
+    "prompt_text": "Rotate the palm outward and return to neutral."
+  },
+  {
+    "category": "gesture",
+    "action": "thumb_index_circle",
+    "variation": "touch_release",
+    "prompt_text": "Touch the thumb and index finger to form a circle, then release."
+  },
+  {
+    "category": "gesture",
+    "action": "finger_roll",
+    "variation": "index_to_little",
+    "prompt_text": "Roll the fingertips inward from index to little finger."
+  }
+]

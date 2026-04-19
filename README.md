@@ -2,12 +2,12 @@
 
 DexForge is an operator-facing ROS 2 data collection system for building large-scale hand motion datasets.
 
-It is designed for projects where hand articulation streams are already available from an external source such as a data glove, and the main requirement is to collect clean, labeled, reviewable motion clips through a fast local interface. DexForge combines a local web UI, a ROS 2 collection backend, structured dataset export, and a built-in dummy pose publisher for runtime validation without external hardware.
+It is designed for projects where hand articulation streams are already available from an external source such as a data glove, and the main requirement is to collect clean, labeled, reviewable recordings through a fast local interface. DexForge combines a local web UI, a ROS 2 collection backend, structured dataset export, and a built-in dummy pose publisher for runtime validation without external hardware.
 
 ## Highlights
 
-- Session-based collection for `left`, `right`, or `both` hands
-- Prompt-driven recording workflow with per-clip review
+- Collection flow for `left`, `right`, or `both` hands
+- Prompt-driven recording workflow with per-recording review
 - Structured export to task-grouped `MCAP + task metadata`
 - Live hand-stage visualization in the web UI
 - Built-in dummy `PoseArray` publisher for local end-to-end testing
@@ -32,18 +32,17 @@ It is designed for projects where hand articulation streams are already availabl
 DexForge runs as a single local service composed of:
 
 1. A ROS 2 subscriber node for hand pose topics
-2. A FastAPI backend for session, prompt, recording, and review control
+2. A FastAPI backend for collection, prompt, recording, and review control
 3. A React/Vite web UI served from the same backend process
 
 The intended collection loop is:
 
-1. Create a session with `left`, `right`, or `both` as the active hand mode
+1. Start a collection with `left`, `right`, or `both` as the active hand mode
 2. Request the next suggested motion prompt
-3. Arm the prompt as the next clip label
 4. Start and stop recording manually
-5. Review the clip and `accept`, `discard`, or `retry`
+5. Review the recording and `save`, `discard`, or `save and record one more`
 
-The backend writes raw clips as MCAP and stores metadata required for later dataset building and model training.
+The backend writes raw recordings as MCAP inside task folders for later dataset building and model training.
 
 ## Expected Input Topics
 
@@ -167,13 +166,13 @@ After both processes are running:
 
 1. Open `http://localhost:8010`
 2. Confirm that the live hand-stage viewer is updating
-3. Create a session
-4. Record and review a test clip
+3. Start a collection
+4. Record and review a test sample
 
 For a quick backend-only check:
 
 ```bash
-curl -s http://localhost:8010/api/sessions/current
+curl -s http://localhost:8010/api/collection
 ```
 
 The returned `hand_pose_preview.left` and `hand_pose_preview.right` fields should contain live points when the dummy publisher is active.
@@ -187,14 +186,13 @@ dex_forge/
     dummy_pose_publisher.py     # built-in test publisher for hand PoseArray topics
     main.py                     # server entrypoint
   config/scenarios/             # scenario library JSON files
-  data_schema/                  # JSON schema files for manifests and events
   tests/                        # backend tests
   web/                          # React/Vite operator UI
 ```
 
 ## Dataset Layout
 
-Recorded data is written under `./dataset` relative to the working directory of the running process.
+By default, recorded data is written under [`./dataset`](./dataset) in the repository root. The dataset root can also be changed from the UI before starting a collection.
 
 ```text
 dataset/
@@ -216,12 +214,14 @@ the generated `metadata.yaml` plus the MCAP file created by rosbag2.
 
 HTTP endpoints:
 
-- `POST /api/sessions`
-- `GET /api/sessions/current`
+- `POST /api/collection/start`
+- `GET /api/collection`
+- `POST /api/collection/active-hands`
+- `POST /api/collection/finish`
 - `POST /api/prompts/next`
-- `POST /api/clips/start`
-- `POST /api/clips/stop`
-- `POST /api/clips/{clip_id}/decision`
+- `POST /api/recordings/start`
+- `POST /api/recordings/stop`
+- `POST /api/recordings/{recording_id}/decision`
 - `POST /api/events/note`
 
 WebSocket:
@@ -240,11 +240,8 @@ Each scenario contains:
 - `action`
 - `variation`
 - `prompt_text`
-- `difficulty`
-- `allowed_hands`
-- `tags`
 
-Prompt selection is filtered by the current session hand mode and avoids recently repeated `category/action` pairs.
+Prompt selection avoids recently repeated `category/action` pairs. The default scenario set contains only single-hand prompts; there are no prompts that require both hands simultaneously.
 
 ## Development
 

@@ -16,55 +16,37 @@ class HandMode(str, Enum):
 
 class RecorderState(str, Enum):
     IDLE = "idle"
-    ARMED = "armed"
     RECORDING = "recording"
     REVIEW = "review"
     ACCEPTED = "accepted"
     DISCARDED = "discarded"
-    RETRIED = "retried"
     INVALID = "invalid"
     FAILED = "failed"
     INTERRUPTED = "interrupted"
 
 
-class ClipDecision(str, Enum):
+class RecordingDecision(str, Enum):
     ACCEPT = "accept"
     DISCARD = "discard"
-    RETRY = "retry"
+    RECORD_MORE = "record_more"
 
 
 class Scenario(BaseModel):
-    model_config = ConfigDict(use_enum_values=True)
-
-    id: str
     category: str
     action: str
     variation: str
     prompt_text: str
-    difficulty: str
-    allowed_hands: str
-    tags: list[str] = Field(default_factory=list)
 
 
-class ClipLabel(BaseModel):
+class TaskLabel(BaseModel):
     category: str
     action: str
     variation: str
 
 
-class SessionRecord(BaseModel):
-    session_id: str
-    active_hands: HandMode
-    started_at: datetime
-    ended_at: datetime | None = None
-    notes: str = ""
-    collection_setup: dict[str, Any] = Field(default_factory=dict)
-
-
 class EventRecord(BaseModel):
     timestamp: datetime
-    session_id: str
-    clip_id: str | None
+    recording_id: str | None
     event_type: str
     payload: dict[str, Any] = Field(default_factory=dict)
 
@@ -79,13 +61,12 @@ class HandPosePoint(BaseModel):
         return getattr(self, key)
 
 
-class ClipRecord(BaseModel):
+class RecordingRecord(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, use_enum_values=False)
 
-    clip_id: str
+    recording_id: str
     task_id: str
-    session_id: str
-    label: ClipLabel
+    label: TaskLabel
     prompt_text: str
     active_hands: HandMode
     recorded_topics: list[str] = Field(default_factory=list)
@@ -98,14 +79,14 @@ class ClipRecord(BaseModel):
     failure_reason: str | None = None
     operator_note: str = ""
     review_preview: dict[str, list[list[HandPosePoint]]] = Field(default_factory=dict)
-    clip_dir: Path
+    recording_dir: Path
 
 
-class SessionSnapshot(BaseModel):
-    session_id: str | None
+class CollectorSnapshot(BaseModel):
+    is_collecting: bool
     active_hands: HandMode | None
     dataset_root: str | None = None
-    accepted_clip_count: int = 0
+    accepted_recording_count: int = 0
     current_state: RecorderState
     current_prompt: Scenario | None
     hand_pose_preview: dict[str, list[HandPosePoint]] = Field(default_factory=dict)

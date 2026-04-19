@@ -31,13 +31,6 @@ setup(
             f"share/{package_name}/config/scenarios",
             ["config/scenarios/default_scenarios.json"],
         ),
-        (
-            f"share/{package_name}/data_schema",
-            [
-                "data_schema/clip_manifest.schema.json",
-                "data_schema/event.schema.json",
-            ],
-        ),
         *package_files(
             project_root / "web" / "dist",
             f"share/{package_name}/web/dist",

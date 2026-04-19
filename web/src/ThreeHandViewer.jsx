@@ -307,7 +307,7 @@ export function ThreeHandViewer({ points, focusedHand }) {
         <div>
           <p className="section-label">Live Hand</p>
           <h2>{focusedHand === "left" ? "Left hand" : "Right hand"}</h2>
-          <p className="viewer-hint">Orbit with drag. Zoom with the wheel. Grid and axes stay world-fixed.</p>
+          <p className="viewer-hint">Orbit with drag. Zoom with the wheel.</p>
         </div>
         <div className={points?.length ? "viewer-status live" : "viewer-status"}>
           {points?.length ? "Live" : "Waiting"}

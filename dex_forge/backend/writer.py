@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
 from typing import Any
 
 import rosbag2_py
@@ -21,8 +22,11 @@ class BufferedMessage:
     timestamp_ns: int
 
 
-class RosbagClipWriter:
+class RosbagRecordingWriter:
     def write(self, bag_path: Path, buffered_messages: list[BufferedMessage]) -> None:
+        if bag_path.exists():
+            shutil.rmtree(bag_path)
+        bag_path.parent.mkdir(parents=True, exist_ok=True)
         writer = rosbag2_py.SequentialWriter()
         writer.open(
             rosbag2_py.StorageOptions(uri=str(bag_path), storage_id="mcap"),

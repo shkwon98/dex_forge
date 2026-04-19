@@ -12,19 +12,24 @@ from dex_forge.backend.scenario_library import ScenarioLibrary
 from dex_forge.backend.service import CollectionService
 
 
+def resolve_project_root() -> Path:
+    candidate = Path(__file__).resolve().parents[1]
+    if candidate.joinpath("config", "scenarios", "default_scenarios.json").exists():
+        return candidate
+    return Path(get_package_share_directory("dex_forge"))
+
+
 def build_service() -> CollectionService:
-    package_root = Path(get_package_share_directory("dex_forge"))
-    dataset_root = package_root / "dataset"
-    if not dataset_root.exists():
-        dataset_root.mkdir(parents=True)
+    project_root = resolve_project_root()
+    dataset_root = project_root / "dataset"
+    dataset_root.mkdir(parents=True, exist_ok=True)
     scenario_library = ScenarioLibrary.from_path(
-        package_root / "config" / "scenarios" / "default_scenarios.json"
+        project_root / "config" / "scenarios" / "default_scenarios.json"
     )
 
     return CollectionService(
         dataset_root=dataset_root,
         scenarios=scenario_library.all(),
-        scenario_version=scenario_library.version,
     )
 
 

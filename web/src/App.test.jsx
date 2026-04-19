@@ -14,36 +14,31 @@ function createApi(overrides = {}) {
   let promptCalls = 0;
   const promptSequence = [
     {
-      id: "pinch",
       category: "pinch",
       action: "precision",
       variation: "thumb_index",
       prompt_text: "Do a precision pinch.",
-      allowed_hands: "either",
     },
     {
-      id: "grasp",
       category: "grasp",
       action: "power_grasp",
       variation: "small_object",
       prompt_text: "Perform a power grasp.",
-      allowed_hands: "either",
     },
   ];
   return {
-    createSession: async ({ activeHands, notes, datasetRoot }) => ({
-      session_id: "session-1",
+    startCollection: async ({ activeHands, datasetRoot }) => ({
+      is_collecting: true,
       active_hands: activeHands,
-      notes,
       dataset_root: datasetRoot,
     }),
     pickDatasetRoot: async () => ({
       dataset_root: "/tmp/chosen-dataset",
     }),
     getNextPrompt: async () => promptSequence[promptCalls++ % promptSequence.length],
-    startClip: async () => ({ ok: true }),
-    stopClip: async () => ({
-      clip_id: "clip-1",
+    startRecording: async () => ({ ok: true }),
+    stopRecording: async () => ({
+      recording_id: "recording-1",
       status: "review",
       failure_reason: null,
       review_preview: {
@@ -51,20 +46,18 @@ function createApi(overrides = {}) {
         right: [[{ x: 0.8, y: 0.25, z: 0, frame_id: "recorded_right" }]],
       },
     }),
-    decideClip: async () => ({
-      clip_id: "clip-1",
+    decideRecording: async () => ({
+      recording_id: "recording-1",
       status: "accepted",
     }),
     updateActiveHands: async (activeHands) => ({
-      session_id: "session-1",
+      is_collecting: true,
       active_hands: activeHands,
     }),
-    finishSession: async () => ({
-      session_id: "session-1",
+    finishCollection: async () => ({
       dataset_root: "/tmp/dataset",
       accepted_count: 1,
       discarded_count: 0,
-      retried_count: 0,
       invalid_count: 0,
     }),
     addNote: async () => ({ ok: true }),
@@ -76,9 +69,10 @@ function createApi(overrides = {}) {
 function createStatusSource(initialSnapshot = {}) {
   const listeners = new Set();
   const snapshot = {
+    is_collecting: false,
     current_state: "idle",
     active_hands: "left",
-    accepted_clip_count: 0,
+    accepted_recording_count: 0,
     hand_pose_preview: {
       left: [{ x: 0.2, y: 0.5, z: 0, frame_id: "left" }],
       right: [{ x: 0.75, y: 0.35, z: 0, frame_id: "right" }],
@@ -102,7 +96,7 @@ function createStatusSource(initialSnapshot = {}) {
 }
 
 
-test("creates a session and keeps the chosen hand mode visible for later clips", async () => {
+test("starts collection and keeps the chosen hand mode visible for later recordings", async () => {
   const user = userEvent.setup();
   const api = createApi();
   const statusSource = createStatusSource({ active_hands: "right" });
@@ -111,7 +105,7 @@ test("creates a session and keeps the chosen hand mode visible for later clips",
 
   await user.selectOptions(screen.getByLabelText(/active hands/i), "right");
   await user.click(screen.getByRole("button", { name: /choose folder/i }));
-  await user.click(screen.getByRole("button", { name: /start session/i }));
+  await user.click(screen.getByRole("button", { name: /start collection/i }));
 
   await screen.findByText(/do a precision pinch/i);
   expect(screen.getByText(/saved 0/i)).toBeInTheDocument();
@@ -123,22 +117,22 @@ test("creates a session and keeps the chosen hand mode visible for later clips",
 test("runs prompt, record, note, and review actions through the operator flow", async () => {
   const user = userEvent.setup();
   const addNote = vi.fn(async () => ({ ok: true }));
-  const decideClip = vi.fn(async () => ({ clip_id: "clip-1", status: "accepted" }));
-  const startClip = vi.fn(async () => ({ ok: true }));
-  const api = createApi({ addNote, decideClip, startClip });
+  const decideRecording = vi.fn(async () => ({ recording_id: "recording-1", status: "accepted" }));
+  const startRecording = vi.fn(async () => ({ ok: true }));
+  const api = createApi({ addNote, decideRecording, startRecording });
   const statusSource = createStatusSource();
 
   render(<App api={api} statusSource={statusSource} />);
 
   await user.click(screen.getByRole("button", { name: /choose folder/i }));
-  await user.click(screen.getByRole("button", { name: /start session/i }));
+  await user.click(screen.getByRole("button", { name: /start collection/i }));
   await user.click(screen.getByRole("button", { name: /start recording/i }));
 
   await screen.findByText(/recording in progress/i);
   await waitFor(() => {
-    expect(startClip).toHaveBeenCalled();
+    expect(startRecording).toHaveBeenCalled();
   });
-  await user.type(screen.getByLabelText(/clip note/i), "steady pinch");
+  await user.type(screen.getByLabelText(/recording note/i), "steady pinch");
   await user.click(screen.getByRole("button", { name: /save note/i }));
 
   await waitFor(() => {
@@ -146,24 +140,74 @@ test("runs prompt, record, note, and review actions through the operator flow", 
   });
 
   await user.click(screen.getByRole("button", { name: /stop recording/i }));
-  await screen.findByText(/review the recorded clip/i);
+  await screen.findByText(/review the recorded sample/i);
   expect(screen.queryByRole("button", { name: /change prompt/i })).not.toBeInTheDocument();
   expect(screen.getByText(/recorded_left/i)).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: /accept clip/i }));
-  statusSource.emit({ accepted_clip_count: 1 });
+  expect(screen.getByRole("button", { name: /confirm/i })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /discard/i })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /confirm/i }));
+  statusSource.emit({ accepted_recording_count: 1 });
 
   await waitFor(() => {
-    expect(decideClip).toHaveBeenCalledWith("clip-1", "accept");
+    expect(decideRecording).toHaveBeenCalledWith("recording-1", "accept");
   });
+  expect(screen.getByRole("button", { name: /^next$/i })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /^again$/i })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /^next$/i }));
   expect(screen.getByText(/saved 1/i)).toBeInTheDocument();
   await screen.findByText(/perform a power grasp/i);
 });
 
 
-test("allows changing active hands during a session until recording starts", async () => {
+test("save and record one more keeps the same prompt ready for another take", async () => {
+  const user = userEvent.setup();
+  const decideRecording = vi.fn(async () => ({ recording_id: "recording-1", status: "accepted" }));
+  const api = createApi({ decideRecording });
+  const statusSource = createStatusSource();
+
+  render(<App api={api} statusSource={statusSource} />);
+
+  await user.click(screen.getByRole("button", { name: /choose folder/i }));
+  await user.click(screen.getByRole("button", { name: /start collection/i }));
+  await user.click(screen.getByRole("button", { name: /start recording/i }));
+  await user.click(screen.getByRole("button", { name: /stop recording/i }));
+  await user.click(screen.getByRole("button", { name: /confirm/i }));
+  await user.click(screen.getByRole("button", { name: /^again$/i }));
+
+  await waitFor(() => {
+    expect(decideRecording).toHaveBeenCalledWith("recording-1", "accept");
+  });
+  expect(screen.getByText(/do a precision pinch/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /start recording/i })).toBeInTheDocument();
+});
+
+
+test("discard requires a follow-up next or again choice", async () => {
+  const user = userEvent.setup();
+  const decideRecording = vi.fn(async () => ({ recording_id: "recording-1", status: "discarded" }));
+  const api = createApi({ decideRecording });
+  const statusSource = createStatusSource();
+
+  render(<App api={api} statusSource={statusSource} />);
+
+  await user.click(screen.getByRole("button", { name: /choose folder/i }));
+  await user.click(screen.getByRole("button", { name: /start collection/i }));
+  await user.click(screen.getByRole("button", { name: /start recording/i }));
+  await user.click(screen.getByRole("button", { name: /stop recording/i }));
+  await user.click(screen.getByRole("button", { name: /discard/i }));
+
+  await waitFor(() => {
+    expect(decideRecording).toHaveBeenCalledWith("recording-1", "discard");
+  });
+  expect(screen.getByRole("button", { name: /^next$/i })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /^again$/i })).toBeInTheDocument();
+});
+
+
+test("allows changing active hands during a collection until recording starts", async () => {
   const user = userEvent.setup();
   const updateActiveHands = vi.fn(async (activeHands) => ({
-    session_id: "session-1",
+    is_collecting: true,
     active_hands: activeHands,
   }));
   const api = createApi({ updateActiveHands });
@@ -172,7 +216,7 @@ test("allows changing active hands during a session until recording starts", asy
   render(<App api={api} statusSource={statusSource} />);
 
   await user.click(screen.getByRole("button", { name: /choose folder/i }));
-  await user.click(screen.getByRole("button", { name: /start session/i }));
+  await user.click(screen.getByRole("button", { name: /start collection/i }));
   await screen.findByText(/do a precision pinch/i);
 
   await user.selectOptions(screen.getByLabelText(/active hands/i), "both");
@@ -186,7 +230,7 @@ test("allows changing active hands during a session until recording starts", asy
 });
 
 
-test("shows a live hand stage and allows focused-hand switching for both-hand sessions", async () => {
+test("shows a live hand stage and allows focused-hand switching for both-hand collection", async () => {
   const user = userEvent.setup();
   const api = createApi();
   const statusSource = createStatusSource({
@@ -201,7 +245,7 @@ test("shows a live hand stage and allows focused-hand switching for both-hand se
 
   await user.selectOptions(screen.getByLabelText(/active hands/i), "both");
   await user.click(screen.getByRole("button", { name: /choose folder/i }));
-  await user.click(screen.getByRole("button", { name: /start session/i }));
+  await user.click(screen.getByRole("button", { name: /start collection/i }));
 
   await screen.findByText(/live hand/i);
   expect(screen.getByText(/focused hand/i)).toBeInTheDocument();
@@ -214,7 +258,7 @@ test("shows a live hand stage and allows focused-hand switching for both-hand se
 });
 
 
-test("shows dataset root on launch and a finish-session summary screen", async () => {
+test("shows dataset root on launch and a finish-collection summary screen", async () => {
   const user = userEvent.setup();
   const api = createApi();
   const statusSource = createStatusSource();
@@ -222,13 +266,40 @@ test("shows dataset root on launch and a finish-session summary screen", async (
   render(<App api={api} statusSource={statusSource} />);
 
   await user.click(screen.getByRole("button", { name: /choose folder/i }));
-  await user.click(screen.getByRole("button", { name: /start session/i }));
+  await user.click(screen.getByRole("button", { name: /start collection/i }));
   await screen.findByText(/do a precision pinch/i);
 
-  await user.click(screen.getByRole("button", { name: /finish session/i }));
+  await user.click(screen.getByRole("button", { name: /finish collection/i }));
 
   expect(await screen.findByText(/dataset folder: \/tmp\/dataset/i)).toBeInTheDocument();
-  expect(screen.getByText(/accepted clips: 1/i)).toBeInTheDocument();
+  expect(screen.getByText(/saved recordings: 1/i)).toBeInTheDocument();
+});
+
+
+test("finish collection keeps the summary screen even if a stale collecting snapshot arrives", async () => {
+  const user = userEvent.setup();
+  const api = createApi();
+  const statusSource = createStatusSource({
+    is_collecting: true,
+    active_hands: "left",
+    dataset_root: "/tmp/dataset",
+  });
+
+  render(<App api={api} statusSource={statusSource} />);
+
+  await screen.findByRole("button", { name: /finish collection/i });
+  await user.click(screen.getByRole("button", { name: /finish collection/i }));
+
+  expect(await screen.findByText(/collection finished/i)).toBeInTheDocument();
+
+  statusSource.emit({
+    is_collecting: true,
+    active_hands: "left",
+    current_state: "idle",
+  });
+
+  expect(screen.getByText(/collection finished/i)).toBeInTheDocument();
+  expect(screen.queryByText(/do a precision pinch/i)).not.toBeInTheDocument();
 });
 
 
@@ -237,13 +308,12 @@ test("fills dataset root from the native picker flow and uses the absolute path"
   const pickDatasetRoot = vi.fn(async () => ({
     dataset_root: "/tmp/chosen-dataset",
   }));
-  const createSession = vi.fn(async ({ activeHands, notes, datasetRoot }) => ({
-    session_id: "session-1",
+  const startCollection = vi.fn(async ({ activeHands, datasetRoot }) => ({
+    is_collecting: true,
     active_hands: activeHands,
-    notes,
     dataset_root: datasetRoot,
   }));
-  const api = createApi({ pickDatasetRoot, createSession });
+  const api = createApi({ pickDatasetRoot, startCollection });
   const statusSource = createStatusSource();
 
   render(<App api={api} statusSource={statusSource} />);
@@ -256,25 +326,24 @@ test("fills dataset root from the native picker flow and uses the absolute path"
   expect(screen.getAllByText(/\/tmp\/chosen-dataset/i).length).toBeGreaterThan(0);
   expect(screen.getByRole("button", { name: /choose folder/i })).toHaveTextContent(/change folder/i);
 
-  await user.click(screen.getByRole("button", { name: /start session/i }));
+  await user.click(screen.getByRole("button", { name: /start collection/i }));
 
   await waitFor(() => {
-    expect(createSession).toHaveBeenCalledWith(
+    expect(startCollection).toHaveBeenCalledWith(
       expect.objectContaining({ datasetRoot: "/tmp/chosen-dataset" }),
     );
   });
 });
 
 
-test("can start a session using the dataset root already present in the live snapshot", async () => {
+test("can start collection using the dataset root already present in the live snapshot", async () => {
   const user = userEvent.setup();
-  const createSession = vi.fn(async ({ activeHands, notes, datasetRoot }) => ({
-    session_id: "session-1",
+  const startCollection = vi.fn(async ({ activeHands, datasetRoot }) => ({
+    is_collecting: true,
     active_hands: activeHands,
-    notes,
     dataset_root: datasetRoot,
   }));
-  const api = createApi({ createSession });
+  const api = createApi({ startCollection });
   const statusSource = createStatusSource({
     dataset_root: "/tmp/preselected-dataset",
   });
@@ -283,14 +352,14 @@ test("can start a session using the dataset root already present in the live sna
 
   expect(screen.getByText(/\/tmp\/preselected-dataset/i)).toBeInTheDocument();
 
-  await user.click(screen.getByRole("button", { name: /start session/i }));
+  await user.click(screen.getByRole("button", { name: /start collection/i }));
 
   await waitFor(() => {
-    expect(createSession).toHaveBeenCalledWith(
+    expect(startCollection).toHaveBeenCalledWith(
       expect.objectContaining({ datasetRoot: "/tmp/preselected-dataset" }),
     );
   });
-  expect(screen.queryByText(/choose a dataset folder before starting the session/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/choose a dataset folder before starting collection/i)).not.toBeInTheDocument();
 });
 
 

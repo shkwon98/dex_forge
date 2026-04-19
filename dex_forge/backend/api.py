@@ -13,23 +13,21 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnect
 
-from .models import ClipDecision, HandMode
+from .models import HandMode, RecordingDecision
 from .service import CollectionService
 
 
-class CreateSessionRequest(BaseModel):
+class StartCollectionRequest(BaseModel):
     active_hands: HandMode
-    notes: str = ""
     dataset_root: str = ""
-    collection_setup: dict = {}
 
 
 class UpdateActiveHandsRequest(BaseModel):
     active_hands: HandMode
 
 
-class DecideClipRequest(BaseModel):
-    decision: ClipDecision
+class DecideRecordingRequest(BaseModel):
+    decision: RecordingDecision
 
 
 class AddNoteRequest(BaseModel):
@@ -136,42 +134,40 @@ def create_app(
     if assets_dir.exists():
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
-    @app.post("/api/sessions")
-    def create_session(request: CreateSessionRequest):
-        return service.create_session(
+    @app.post("/api/collection/start")
+    def start_collection(request: StartCollectionRequest):
+        return service.start_collection(
             active_hands=request.active_hands,
-            notes=request.notes,
             dataset_root=request.dataset_root or None,
-            collection_setup=request.collection_setup,
         )
 
-    @app.get("/api/sessions/current")
-    def current_session():
+    @app.get("/api/collection")
+    def current_collection():
         return service.snapshot()
 
-    @app.post("/api/sessions/active-hands")
+    @app.post("/api/collection/active-hands")
     def update_active_hands(request: UpdateActiveHandsRequest):
         return service.update_active_hands(request.active_hands)
 
-    @app.post("/api/sessions/finish")
-    def finish_session():
-        return service.finish_session()
+    @app.post("/api/collection/finish")
+    def finish_collection():
+        return service.finish_collection()
 
     @app.post("/api/prompts/next")
     def next_prompt():
         return service.next_prompt()
 
-    @app.post("/api/clips/start")
-    def start_clip():
-        return service.start_clip()
+    @app.post("/api/recordings/start")
+    def start_recording():
+        return service.start_recording()
 
-    @app.post("/api/clips/stop")
-    def stop_clip():
-        return service.stop_clip()
+    @app.post("/api/recordings/stop")
+    def stop_recording():
+        return service.stop_recording()
 
-    @app.post("/api/clips/{clip_id}/decision")
-    def decide_clip(clip_id: str, request: DecideClipRequest):
-        return service.decide_clip(clip_id, request.decision)
+    @app.post("/api/recordings/{recording_id}/decision")
+    def decide_recording(recording_id: str, request: DecideRecordingRequest):
+        return service.decide_recording(recording_id, request.decision)
 
     @app.post("/api/events/note")
     def add_note(request: AddNoteRequest):
@@ -199,6 +195,7 @@ def create_app(
 
     @app.get("/{path:path}")
     def serve_frontend(path: str):
+        del path
         index = web_dist / "index.html"
         if index.exists():
             return FileResponse(index)

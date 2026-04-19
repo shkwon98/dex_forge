@@ -8,7 +8,7 @@ afterEach(() => {
 });
 
 
-test("falls back to polling current session when websocket setup fails", async () => {
+test("falls back to polling current collection when websocket setup fails", async () => {
   const addEventListener = vi.fn((event, handler) => {
     if (event === "error") {
       setTimeout(() => handler(new Event("error")), 0);
@@ -18,6 +18,7 @@ test("falls back to polling current session when websocket setup fails", async (
   const fetchMock = vi.fn(async () => ({
     ok: true,
     json: async () => ({
+      is_collecting: true,
       current_state: "idle",
       active_hands: "both",
       hand_pose_preview: {
@@ -44,7 +45,7 @@ test("falls back to polling current session when websocket setup fails", async (
   await new Promise((resolve) => setTimeout(resolve, 20));
 
   expect(fetchMock).toHaveBeenCalledWith(
-    "/api/sessions/current",
+    "/api/collection",
     expect.objectContaining({
       headers: expect.objectContaining({
         "Content-Type": "application/json",
