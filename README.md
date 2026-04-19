@@ -8,7 +8,7 @@ It is designed for projects where hand articulation streams are already availabl
 
 - Session-based collection for `left`, `right`, or `both` hands
 - Prompt-driven recording workflow with per-clip review
-- Structured export to `MCAP + manifest + event log`
+- Structured export to task-grouped `MCAP + task metadata`
 - Live hand-stage visualization in the web UI
 - Built-in dummy `PoseArray` publisher for local end-to-end testing
 
@@ -198,22 +198,19 @@ Recorded data is written under `./dataset` relative to the working directory of 
 
 ```text
 dataset/
-  sessions/
-    <session_id>/
-      session_manifest.json
-      clips/
-        <clip_id>/
-          recording.mcap
-          clip_manifest.json
-          events.jsonl
-  scenario_library_version.json
+  tasks/
+    tasks.json
+    <sha256>/
+      task.json
+      recording_000001/
+        metadata.yaml
+        *.mcap
 ```
 
-Each accepted or reviewed clip includes:
-
-- raw MCAP recording
-- structured clip metadata
-- ordered event log for prompt, record, and review actions
+Each task groups recordings captured for the same prompt text. The task directory name is the
+pure SHA-256 hex digest of `prompt_text`, and `tasks.json` stores only `task_id` and
+`prompt_text` for index lookups. Each recording directory is the rosbag output root and contains
+the generated `metadata.yaml` plus the MCAP file created by rosbag2.
 
 ## API Summary
 

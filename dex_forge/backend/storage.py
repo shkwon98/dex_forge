@@ -1,49 +1,70 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
-from .models import ClipRecord, EventRecord, SessionRecord
+from .models import ClipLabel
 
 
 class DatasetStorage:
     def __init__(self, dataset_root: Path):
         self.dataset_root = dataset_root
-        self.sessions_root = self.dataset_root / "sessions"
-        self.sessions_root.mkdir(parents=True, exist_ok=True)
+        self.tasks_root = self.dataset_root / "tasks"
+        self.tasks_root.mkdir(parents=True, exist_ok=True)
 
-    def write_scenario_version(self, version: str) -> None:
-        path = self.scenario_version_path()
-        path.write_text(json.dumps({"version": version}, indent=2))
+    def task_id_for_prompt(self, prompt_text: str) -> str:
+        digest = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
+        return digest
 
-    def scenario_version_path(self) -> Path:
-        return self.dataset_root / "scenario_library_version.json"
-
-    def session_dir(self, session_id: str) -> Path:
-        path = self.sessions_root / session_id
+    def task_dir(self, task_id: str) -> Path:
+        path = self.tasks_root / task_id
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    def clip_dir(self, session_id: str, clip_id: str) -> Path:
-        path = self.session_dir(session_id) / "clips" / clip_id
-        path.mkdir(parents=True, exist_ok=True)
+    def recording_dir(self, task_id: str) -> Path:
+        task_dir = self.task_dir(task_id)
+        existing = sorted(
+            path for path in task_dir.iterdir()
+            if path.is_dir() and path.name.startswith("recording_")
+        )
+        next_index = len(existing) + 1
+        return task_dir / f"recording_{next_index:06d}"
+
+    def ensure_task_metadata(self, task_id: str, prompt_text: str, label: ClipLabel) -> Path:
+        task_dir = self.task_dir(task_id)
+        self._write_task_index(task_id, prompt_text)
+
+        recording_count = len(
+            [
+                path
+                for path in task_dir.iterdir()
+                if path.is_dir() and path.name.startswith("recording_")
+            ]
+        )
+        payload = {
+            "task_id": task_id,
+            "prompt_text": prompt_text,
+            "label": label.model_dump(),
+            "recording_count": recording_count,
+        }
+        path = task_dir / "task.json"
+        path.write_text(json.dumps(payload, indent=2))
         return path
 
-    def write_session_manifest(self, session: SessionRecord) -> Path:
-        path = self.session_manifest_path(session.session_id)
-        path.write_text(json.dumps(session.model_dump(mode="json"), indent=2))
-        return path
+    def _write_task_index(self, task_id: str, prompt_text: str) -> None:
+        path = self.tasks_root / "tasks.json"
+        if path.exists():
+            payload = json.loads(path.read_text())
+        else:
+            payload = {"tasks": []}
 
-    def session_manifest_path(self, session_id: str) -> Path:
-        return self.session_dir(session_id) / "session_manifest.json"
-
-    def write_clip_manifest(self, clip: ClipRecord) -> Path:
-        path = clip.clip_dir / "clip_manifest.json"
-        path.write_text(json.dumps(clip.manifest_payload(), indent=2))
-        return path
-
-    def write_events(self, clip_dir: Path, events: list[EventRecord]) -> Path:
-        path = clip_dir / "events.jsonl"
-        lines = [json.dumps(event.model_dump(mode="json")) for event in events]
-        path.write_text("\n".join(lines) + ("\n" if lines else ""))
-        return path
+        entries = [entry for entry in payload["tasks"] if entry.get("task_id") != task_id]
+        entries.append(
+            {
+                "task_id": task_id,
+                "prompt_text": prompt_text,
+            }
+        )
+        payload["tasks"] = sorted(entries, key=lambda entry: entry["task_id"])
+        path.write_text(json.dumps(payload, indent=2))

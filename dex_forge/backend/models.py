@@ -57,7 +57,6 @@ class SessionRecord(BaseModel):
     active_hands: HandMode
     started_at: datetime
     ended_at: datetime | None = None
-    scenario_library_version: str
     notes: str = ""
     collection_setup: dict[str, Any] = Field(default_factory=dict)
 
@@ -84,6 +83,7 @@ class ClipRecord(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, use_enum_values=False)
 
     clip_id: str
+    task_id: str
     session_id: str
     label: ClipLabel
     prompt_text: str
@@ -99,24 +99,6 @@ class ClipRecord(BaseModel):
     operator_note: str = ""
     review_preview: dict[str, list[list[HandPosePoint]]] = Field(default_factory=dict)
     clip_dir: Path
-
-    def manifest_payload(self) -> dict[str, Any]:
-        return {
-            "clip_id": self.clip_id,
-            "session_id": self.session_id,
-            "label": self.label.model_dump(),
-            "prompt_text": self.prompt_text,
-            "active_hands": self.active_hands.value,
-            "recorded_topics": self.recorded_topics,
-            "start_time": self.start_time.isoformat() if self.start_time else None,
-            "end_time": self.end_time.isoformat() if self.end_time else None,
-            "duration_sec": self.duration_sec,
-            "frame_counts": self.frame_counts,
-            "bag_path": self.bag_path,
-            "status": self.status.value,
-            "failure_reason": self.failure_reason,
-            "operator_note": self.operator_note,
-        }
 
 
 class SessionSnapshot(BaseModel):

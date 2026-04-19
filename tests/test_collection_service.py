@@ -6,6 +6,7 @@ import yaml
 from geometry_msgs.msg import Point, Pose, PoseArray, Quaternion
 import pytest
 import rosbag2_py
+from rclpy.serialization import deserialize_message
 from std_msgs.msg import String
 
 from dex_forge.backend.models import ClipDecision, HandMode, RecorderState, Scenario
@@ -29,6 +30,21 @@ def read_bag_topics(uri: str) -> list[str]:
         rosbag2_py.ConverterOptions("", ""),
     )
     return [topic.name for topic in reader.get_all_topics_and_types()]
+
+
+def read_event_records(uri: str) -> list[dict[str, object]]:
+    reader = rosbag2_py.SequentialReader()
+    reader.open(
+        rosbag2_py.StorageOptions(uri=uri, storage_id="mcap"),
+        rosbag2_py.ConverterOptions("", ""),
+    )
+
+    events: list[dict[str, object]] = []
+    while reader.has_next():
+        topic, data, _ = reader.read_next()
+        if topic == "/collector/events":
+            events.append(json.loads(deserialize_message(data, String).data))
+    return events
 
 
 @pytest.fixture
@@ -147,10 +163,10 @@ def test_stop_writes_clip_outputs_and_mcap_for_left_hand(service):
         "/collector/events",
         "/teleop/human/hand_left/pose",
     ]
-    assert clip.clip_dir.joinpath("recording.mcap").exists()
+    assert list(clip.clip_dir.glob("*.mcap"))
     assert service.decide_clip(clip.clip_id, ClipDecision.ACCEPT).status == RecorderState.ACCEPTED
 
-    topics = sorted(read_bag_topics(str(clip.clip_dir / "recording.mcap")))
+    topics = sorted(read_bag_topics(str(clip.clip_dir)))
     assert topics == ["/collector/events", "/teleop/human/hand_left/pose"]
 
 
@@ -178,9 +194,9 @@ def test_same_prompt_accumulates_recordings_under_one_task_folder(service):
     second_clip = service.stop_clip(stop_time=datetime(2026, 4, 16, 12, 1, 1, tzinfo=UTC))
 
     assert first_clip.task_id == second_clip.task_id
-    assert first_clip.task_dir == second_clip.task_dir
     assert first_clip.task_id == hashlib.sha256(prompt.prompt_text.encode("utf-8")).hexdigest()
-    assert first_clip.task_dir.name == first_clip.task_id
+    assert first_clip.clip_dir.parent == second_clip.clip_dir.parent
+    assert first_clip.clip_dir.parent.name == first_clip.task_id
     assert first_clip.clip_dir.name == "recording_000001"
     assert second_clip.clip_dir.name == "recording_000002"
 
@@ -196,11 +212,13 @@ def test_same_prompt_accumulates_recordings_under_one_task_folder(service):
     assert not first_clip.clip_dir.joinpath("events.jsonl").exists()
     assert not first_clip.clip_dir.joinpath("recording_manifest.json").exists()
     assert first_clip.clip_dir.joinpath("metadata.yaml").exists()
+    mcap_files = sorted(first_clip.clip_dir.glob("*.mcap"))
+    assert mcap_files
 
     metadata = yaml.safe_load(first_clip.clip_dir.joinpath("metadata.yaml").read_text())
     bag_info = metadata["rosbag2_bagfile_information"]
     assert bag_info["storage_identifier"] == "mcap"
-    assert bag_info["relative_file_paths"] == ["recording.mcap"]
+    assert sorted(bag_info["relative_file_paths"]) == [path.name for path in mcap_files]
     assert any(
         topic["topic_metadata"]["name"] == "/teleop/human/hand_left/pose"
         for topic in bag_info["topics_with_message_count"]
@@ -310,10 +328,7 @@ def test_add_note_is_written_to_event_log(service):
     clip = service.stop_clip(stop_time=datetime(2026, 4, 16, 12, 0, 1, tzinfo=UTC))
     service.decide_clip(clip.clip_id, ClipDecision.ACCEPT)
 
-    events = [
-        json.loads(line)
-        for line in clip.clip_dir.joinpath("events.jsonl").read_text().splitlines()
-    ]
+    events = read_event_records(str(clip.clip_dir))
     assert any(event["event_type"] == "note_added" for event in events)
 
 

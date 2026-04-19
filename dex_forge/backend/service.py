@@ -29,15 +29,12 @@ class CollectionService:
         self,
         dataset_root: Path,
         scenarios: list[Scenario],
-        scenario_version: str,
         *,
         min_duration_sec: float = 0.25,
         min_frames_per_topic: int = 5,
     ):
-        self.scenario_version = scenario_version
         self.storage = DatasetStorage(Path(dataset_root))
-        self.storage.write_scenario_version(scenario_version)
-        self.scenario_library = ScenarioLibrary(version=scenario_version, scenarios=scenarios)
+        self.scenario_library = ScenarioLibrary(version="", scenarios=scenarios)
         self.writer = RosbagClipWriter()
         self.min_duration_sec = min_duration_sec
         self.min_frames_per_topic = min_frames_per_topic
@@ -67,13 +64,11 @@ class CollectionService:
     ) -> SessionRecord:
         if dataset_root:
             self.storage = DatasetStorage(Path(dataset_root).expanduser().resolve())
-            self.storage.write_scenario_version(self.scenario_version)
         session_id = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S") + "_" + uuid4().hex[:6]
         self.session = SessionRecord(
             session_id=session_id,
             active_hands=active_hands,
             started_at=datetime.now(tz=UTC),
-            scenario_library_version=self.scenario_library.version,
             notes=notes,
             collection_setup=collection_setup or {},
         )
@@ -86,7 +81,6 @@ class CollectionService:
         self.hand_pose_preview = {"left": [], "right": []}
         self.session_notes = []
         self.session_outcomes = []
-        self.storage.write_session_manifest(self.session)
         return self.session
 
     def update_active_hands(self, active_hands: HandMode) -> SessionRecord:
@@ -106,8 +100,6 @@ class CollectionService:
 
         if self.current_prompt and not self.scenario_library.supports(active_hands, self.current_prompt):
             self.current_prompt = None
-
-        self.storage.write_session_manifest(session)
         return session
 
     def next_prompt(self) -> Scenario:
@@ -174,7 +166,7 @@ class CollectionService:
         self._append_event("record_stopped", {"clip_id": clip.clip_id})
         bag_messages = self._build_bag_messages()
         clip.recorded_topics = sorted({item.topic for item in bag_messages})
-        clip.bag_path = str(clip.clip_dir / "recording.mcap")
+        clip.bag_path = str(clip.clip_dir)
 
         failure_reason = self._sanity_check(clip)
         if failure_reason:
@@ -189,8 +181,7 @@ class CollectionService:
 
         clip.review_preview = self._build_review_preview()
         self.writer.write(Path(clip.bag_path), bag_messages)
-        self.storage.write_events(clip.clip_dir, self.pending_clip_events)
-        self.storage.write_clip_manifest(clip)
+        self.storage.ensure_task_metadata(clip.task_id, clip.prompt_text, clip.label)
         return clip
 
     def decide_clip(self, clip_id: str, decision: ClipDecision) -> ClipRecord:
@@ -213,11 +204,10 @@ class CollectionService:
             replacement.operator_note = clip.operator_note
             self.current_clip = replacement
             self.current_state = RecorderState.ARMED
-            self.storage.write_clip_manifest(clip)
+            self.storage.ensure_task_metadata(clip.task_id, clip.prompt_text, clip.label)
             return replacement
 
-        self.storage.write_events(clip.clip_dir, self.pending_clip_events)
-        self.storage.write_clip_manifest(clip)
+        self.storage.ensure_task_metadata(clip.task_id, clip.prompt_text, clip.label)
         self.recent_pairs.append((clip.label.category, clip.label.action))
         self.session_outcomes.append(clip.status.value)
         self.current_clip = None
@@ -255,7 +245,6 @@ class CollectionService:
             raise InvalidTransitionError("session cannot finish while a clip is awaiting review")
 
         session.ended_at = datetime.now(tz=UTC)
-        self.storage.write_session_manifest(session)
 
         summary = {
             "session_id": session.session_id,
@@ -352,18 +341,23 @@ class CollectionService:
     def _build_clip_record(self, scenario: Scenario) -> ClipRecord:
         session = self._require_session()
         clip_id = f"clip_{uuid4().hex[:8]}"
+        label = ClipLabel(
+            category=scenario.category,
+            action=scenario.action,
+            variation=scenario.variation,
+        )
+        task_id = self.storage.task_id_for_prompt(scenario.prompt_text)
+        clip_dir = self.storage.recording_dir(task_id)
+        self.storage.ensure_task_metadata(task_id, scenario.prompt_text, label)
         return ClipRecord(
             clip_id=clip_id,
+            task_id=task_id,
             session_id=session.session_id,
-            label=ClipLabel(
-                category=scenario.category,
-                action=scenario.action,
-                variation=scenario.variation,
-            ),
+            label=label,
             prompt_text=scenario.prompt_text,
             active_hands=session.active_hands,
             status=RecorderState.ARMED,
-            clip_dir=self.storage.clip_dir(session.session_id, clip_id),
+            clip_dir=clip_dir,
         )
 
     def _scenario_from_clip(self, clip: ClipRecord) -> Scenario:

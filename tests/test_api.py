@@ -88,7 +88,6 @@ def test_api_supports_session_creation_and_prompt_flow(tmp_path):
                 tags=["pinch"],
             )
         ],
-        scenario_version="test-v1",
     )
     web_dist = tmp_path / "web" / "dist"
     web_dist.mkdir(parents=True)
@@ -131,7 +130,6 @@ def test_api_updates_active_hands_for_the_current_session(tmp_path):
                 tags=["pinch"],
             )
         ],
-        scenario_version="test-v1",
     )
     web_dist = tmp_path / "web" / "dist"
     web_dist.mkdir(parents=True)
@@ -172,7 +170,6 @@ def test_api_accepts_dataset_root_and_finishes_session(tmp_path):
                 tags=["pinch"],
             )
         ],
-        scenario_version="test-v1",
     )
     web_dist = tmp_path / "web" / "dist"
     web_dist.mkdir(parents=True)
@@ -210,7 +207,6 @@ def test_api_can_open_native_dataset_root_picker(tmp_path):
                 tags=["pinch"],
             )
         ],
-        scenario_version="test-v1",
     )
     web_dist = tmp_path / "web" / "dist"
     web_dist.mkdir(parents=True)

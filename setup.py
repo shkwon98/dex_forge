@@ -36,7 +36,6 @@ setup(
             [
                 "data_schema/clip_manifest.schema.json",
                 "data_schema/event.schema.json",
-                "data_schema/session_manifest.schema.json",
             ],
         ),
         *package_files(
