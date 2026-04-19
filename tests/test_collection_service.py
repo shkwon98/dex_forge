@@ -152,53 +152,49 @@ def test_stop_writes_clip_outputs_and_mcap_for_left_hand(service):
     topics = sorted(read_bag_topics(str(clip.clip_dir / "recording.mcap")))
     assert topics == ["/collector/events", "/teleop/human/hand_left/pose"]
 
-    manifest = json.loads(clip.clip_dir.joinpath("recording_manifest.json").read_text())
-    assert manifest["status"] == "accepted"
-    assert manifest["active_hands"] == "left"
-    assert manifest["label"]["action"] == "precision"
 
 
 def test_same_prompt_accumulates_recordings_under_one_task_folder(service):
     service.create_session(active_hands=HandMode.LEFT)
     prompt = service.next_prompt()
 
-    first = service.start_clip(start_time=datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC))
+    service.start_clip(start_time=datetime(2026, 4, 16, 12, 0, 0, tzinfo=UTC))
     service.record_message(
         topic="/teleop/human/hand_left/pose",
         message=make_pose_array(),
         timestamp_ns=1_000_000,
     )
-    first = service.stop_clip(stop_time=datetime(2026, 4, 16, 12, 0, 1, tzinfo=UTC))
-    service.decide_clip(first.clip_id, ClipDecision.ACCEPT)
+    first_clip = service.stop_clip(stop_time=datetime(2026, 4, 16, 12, 0, 1, tzinfo=UTC))
+    service.decide_clip(first_clip.clip_id, ClipDecision.ACCEPT)
 
     service.next_prompt()
-    second = service.start_clip(start_time=datetime(2026, 4, 16, 12, 1, 0, tzinfo=UTC))
+    service.start_clip(start_time=datetime(2026, 4, 16, 12, 1, 0, tzinfo=UTC))
     service.record_message(
         topic="/teleop/human/hand_left/pose",
         message=make_pose_array(),
         timestamp_ns=2_000_000,
     )
-    second = service.stop_clip(stop_time=datetime(2026, 4, 16, 12, 1, 1, tzinfo=UTC))
+    second_clip = service.stop_clip(stop_time=datetime(2026, 4, 16, 12, 1, 1, tzinfo=UTC))
 
-    assert first.task_id == second.task_id
-    assert first.task_dir == second.task_dir
-    assert first.task_id == hashlib.sha256(prompt.prompt_text.encode("utf-8")).hexdigest()
-    assert first.task_dir.name == first.task_id
-    assert first.clip_dir.name == "recording_000001"
-    assert second.clip_dir.name == "recording_000002"
+    assert first_clip.task_id == second_clip.task_id
+    assert first_clip.task_dir == second_clip.task_dir
+    assert first_clip.task_id == hashlib.sha256(prompt.prompt_text.encode("utf-8")).hexdigest()
+    assert first_clip.task_dir.name == first_clip.task_id
+    assert first_clip.clip_dir.name == "recording_000001"
+    assert second_clip.clip_dir.name == "recording_000002"
 
     tasks_index = json.loads(service.storage.tasks_root.joinpath("tasks.json").read_text())
     assert tasks_index == {
         "tasks": [
             {
-                "task_id": first.task_id,
+                "task_id": first_clip.task_id,
                 "prompt_text": prompt.prompt_text,
             }
         ]
     }
-    assert not first.clip_dir.joinpath("events.jsonl").exists()
-    assert not first.clip_dir.joinpath("recording_manifest.json").exists()
-    assert first.clip_dir.joinpath("metadata.yaml").exists()
+    assert not first_clip.clip_dir.joinpath("events.jsonl").exists()
+    assert not first_clip.clip_dir.joinpath("recording_manifest.json").exists()
+    assert first_clip.clip_dir.joinpath("metadata.yaml").exists()
 
 
 def test_stop_marks_clip_invalid_when_required_topic_has_no_frames(service):
