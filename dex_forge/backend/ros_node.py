@@ -6,6 +6,7 @@ from geometry_msgs.msg import PoseArray
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 
 from .service import LEFT_TOPIC, RIGHT_TOPIC, CollectionService
 
@@ -14,8 +15,8 @@ class HandCollectorNode(Node):
     def __init__(self, service: CollectionService):
         super().__init__("dex_forge")
         self._service = service
-        self.create_subscription(PoseArray, LEFT_TOPIC, self._on_left_pose, 10)
-        self.create_subscription(PoseArray, RIGHT_TOPIC, self._on_right_pose, 10)
+        self.create_subscription(PoseArray, LEFT_TOPIC, self._on_left_pose, qos_profile_sensor_data)
+        self.create_subscription(PoseArray, RIGHT_TOPIC, self._on_right_pose, qos_profile_sensor_data)
 
     def _on_left_pose(self, msg: PoseArray) -> None:
         self._service.record_message(
